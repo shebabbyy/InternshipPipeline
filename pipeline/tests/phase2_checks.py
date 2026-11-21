@@ -35,6 +35,9 @@ _cases = {
     "Expected Graduation Date": ("seed", _P_["education"]["graduation"]),
     "Have you previously worked for Tokio Marine HCC?": ("seed", "No"),
     "How did you hear about us?": ("seed", "Company Website"),
+    "Where did you first locate this position?": ("seed", "Company Website"),
+    "What is your current major?": ("seed", _P_["standard_answers"]["majors"].replace(";", ",")),
+    "What is your highest degree obtained/pursuing?": ("seed", "Bachelor of Business Administration"),
     "What are your salary expectations?": ("never", ""),
     "Have you ever been convicted of a felony?": ("never", ""),
     "I certify that the information provided is true and complete": ("never", ""),
@@ -59,6 +62,10 @@ check("phase2 answers: his answer is saved and reused", _C("Address Line 1 *") =
 check("phase2 answers: never stores salary / demographic answers",
       _C("What are your salary expectations?")[0] == "never" and "salary" not in ab.BANK_PATH.read_text(encoding="utf-8")
       and "gender" not in ab.BANK_PATH.read_text(encoding="utf-8"))
+ab.save_answer("Where did you first locate this position?", "Company Website")
+check("phase2 answers: job source is never saved; always the real source of each job (Nov 21)",
+      "locate" not in ab.BANK_PATH.read_text(encoding="utf-8")
+      and ab.classify("Where did you first locate this position?", "text", {"source": "linkedin"}) == ("seed", "LinkedIn"))
 ab.queue_answer("Preferred Name", "Shay")
 ab.queue_answer("", cont=True)
 _got, _cont = ab.take_inbox()
@@ -92,12 +99,12 @@ check("phase2 gmail: read-only (no send / delete / flag), off without an app pas
 _pairs = [{"section": "My Information", "label": "First Name", "value": _first},
           {"section": "My Information", "label": "Phone Number", "value": _P_["candidate"]["phone"]},
           {"section": "My Information", "label": "How Did You Hear About Us?", "value": "Indeed"},
-          {"section": "Education", "label": "From", "value": "2024"},
+          {"section": "Education", "label": "From", "value": "2019"},      # wrong whether or not his start is known
           {"section": "Questions", "label": "Gender", "value": "I do not wish to answer"},
           {"section": "Questions", "label": "Are you willing to relocate?", "value": "Yes"},
           {"section": "Questions", "label": "Which office?", "value": "Houston"}]
 _r = {i["label"]: i["color"] for i in rc.compare(_pairs, _job)}
-check("phase2 review: green match / red mismatch + guessed start year / yellow unknown",
+check("phase2 review: green match / red mismatch + wrong or guessed start year / yellow unknown",
       _r == {"First Name": "green", "Phone Number": "green", "How Did You Hear About Us?": "red", "From": "red",
              "Gender": "green", "Are you willing to relocate?": "red", "Which office?": "yellow"}, str(_r))
 
@@ -119,12 +126,27 @@ check("phase2 static: Workday filler never ticks boxes or presses keys to submit
 _gi2 = (IP / ".gitignore").read_text(encoding="utf-8") if (IP / ".gitignore").exists() else "answers.yaml"
 check("phase2 repo: answers.yaml is private (git-ignored)", "answers.yaml" in _gi2)
 
+# ---------- My Experience plan (Nov 21: the section was left empty on the first live run)
+_plan = wdm.experience_plan(_P_)
+_w0 = _plan["work"][0] if _plan["work"] else {}
+check("phase2 experience: plan comes from the profile (titles, dates, current job, verified bullets only, school start only if stated)",
+      _w0.get("title") and "(" not in _w0["title"] and _w0.get("company") == _P_["experience"][0]["organization"]
+      and _re.match(r"^\d\d/20\d\d$", _w0.get("start", "")) and all(
+          b["text"] not in "\n".join(w["description"] for w in _plan["work"])
+          for e in _P_["experience"] for b in e["bullets"] if b.get("verified") is not True)
+      and _plan["edu"] and _plan["edu"][0]["gpa"] == _P_["education"]["gpa"]
+      and wdm.experience_answer("edu", "From", "text", dict(_plan["edu"][0], start_year="", start="")) is None
+      and wdm.experience_answer("edu", "From", "date", dict(_plan["edu"][0], start="")) is None
+      and wdm.experience_answer("work", "I currently work here", "checkbox", _w0) == ("tick" if _w0.get("current") else None),
+      str(_plan)[:400])
+
 # ---------- browser: whole flow on a fake Workday site (needs Playwright + Chromium)
 try:
     from playwright.sync_api import sync_playwright as _sp
     _resume = _P(_tf.mkdtemp()) / "resume.pdf"
     _resume.write_bytes(b"%PDF-1.4 test")
     _seen = []
+    _seen_exp = []
 
     def _him(wf, reason, items):          # what Shehab does during each pause
         _seen.append((reason, [i["label"] for i in items], ab.read_pending().get("company")))
@@ -132,6 +154,10 @@ try:
             wf.page.check("#terms")
         elif "Address Line 1" in [i["label"] for i in items]:
             ab.queue_answer("Address Line 1", "1 Test Street")      # typed in the Control Center
+        elif any(i["label"] == "From" for i in items):           # school start year: he types it on the page
+            _seen_exp.extend(items)
+            wf.page.fill("#edu1-first-y", "2024")
+            ab.queue_answer("", cont=True)
         elif "I certify" in " ".join(i["label"] for i in items):
             wf.page.check("#cert")
         elif "I consent" in " ".join(i["label"] for i in items):
@@ -157,6 +183,25 @@ try:
               and _d.get("phone", "").endswith(_re.sub(r"\D", "", _P_["candidate"]["phone"])[-4:]), str(_d))
         check("browser phase2: unknown question paused, his Control Center answer filled + saved",
               _d.get("addr") == "1 Test Street" and _C("Address Line 1") == ("learned", "1 Test Street"))
+        _X = _S.get("exp") or {}
+        _pw = _plan["work"]
+        check("browser phase2: My Experience: one work entry per profile job, current job ticked, no end date",
+              len(_X.get("work", [])) == len(_pw) and _X["work"][0]["title"] == _pw[0]["title"]
+              and _X["work"][0]["company"] == _pw[0]["company"] and _X["work"][0]["from"] == _pw[0]["start"]
+              and _X["work"][0]["cur"] == _pw[0]["current"] and (_X["work"][0]["to"] is None) == _pw[0]["current"]
+              and _X["work"][0]["desc"] == _pw[0]["description"]
+              and all(_X["work"][i]["to"] == _pw[i]["end"] for i in range(len(_pw)) if not _pw[i]["current"]), str(_X)[:600])
+        _e = (_X.get("edu") or [{}])[0]
+        check("browser phase2: My Experience: education filled, majors picked, start year only from him",
+              _e.get("school") == ["University of Houston"] and _e.get("deg") == "Bachelor's Degree"
+              and _e.get("fos") == _plan["edu"][0]["majors"] and _e.get("gpa") == _P_["education"]["gpa"]
+              and _e.get("first") == (_plan["edu"][0]["start_year"] or "2024") and _e.get("last") == _plan["edu"][0]["grad_year"], str(_e))
+        check("browser phase2: My Experience: school start year from the profile, else paused for him (never guessed, never saved)",
+              (len(_seen_exp) == 0 if _plan["edu"][0]["start_year"] else (len(_seen_exp) == 1 and _seen_exp[0]["category"] == "never"))
+              and _C("From")[0] != "learned", str(_seen_exp))
+        check("browser phase2: My Experience: language + skills from the profile, fluent box left alone",
+              [(l["lang"], l["native"]) for l in _X.get("lang", [])] == [(x["language"], False) for x in _plan["lang"]]
+              and all(l["speak"] for l in _X.get("lang", [])) and _X.get("skills") == _plan["skills"], str(_X)[:600])
         check("browser phase2: questions answered from the bank; salary / essay / unknown optional left blank",
               _d.get("auth") == "Yes" and _d.get("spon") == "No" and _d.get("gpa") == _P_["education"]["gpa"]
               and _d.get("sal") == "" and _d.get("why") == "" and _d.get("rel") == "", str(_d))
@@ -167,9 +212,11 @@ try:
               and all(s[2] == "Tokio Marine HCC" for s in _seen if s[1]), str(_seen))
         _res = rc.run(_pg, _job, _wf.filled)
         _col = {i["label"]: i["color"] for i in _res["items"]}
-        check("browser phase2: Review check flags the wrong source and the guessed start year, panel shown",
-              _col.get("How Did You Hear About Us?") == "red" and _col.get("From") == "red" and _col.get("First Name") == "green"
-              and _col.get("What is your GPA?") == "green" and "2 red" in _pg.inner_text("#pipeline-review-panel"), str(_col))
+        check("browser phase2: Review check flags the wrong source; start year green only if it matches his, panel shown",
+              _col.get("How Did You Hear About Us?") == "red" and _col.get("First Name") == "green"
+              and _col.get("From") == ("green" if "2024" in (_P_["education"].get("start") or "") else "red")
+              and _col.get("What is your GPA?") == "green"
+              and f'{1 + (_col.get("From") == "red")} red' in _pg.inner_text("#pipeline-review-panel"), str(_col))
         _refused = False
         try:
             aw2.safe_click(_pg.locator("#submit"), _pg)

@@ -87,8 +87,13 @@ def compare(pairs: list[dict], job: dict | None = None, filled: dict | None = No
             continue
         color, why = "yellow", "not filled by the pipeline: check it"
         cat, exp = ab.classify(label, job=job)
-        if "education" in sec and re.search(r"^(from|start|start date|first year attended)$", q) and not has_start:
-            color, why = "red", "education start date is not in your profile (a parser/Simplify guess)"
+        if "education" in sec and re.search(r"^(from|start|start date|first year attended)$", q):
+            start = PROFILE.get("education", {}).get("start") or ""
+            sy = (re.search(r"20\d\d", start) or [""])[0]
+            if not has_start:
+                color, why = "red", "education start date is not in your profile (a parser/Simplify guess)"
+            else:
+                color, why = ("green", "") if sy and sy in value else ("red", f"your start is {start}")
         elif cat in ("seed", "learned"):
             color, why = ("green", "") if values_match(value, exp) else ("red", f"expected {exp}")
         elif cat == "eeo":

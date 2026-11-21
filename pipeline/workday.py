@@ -22,19 +22,22 @@ from urllib.parse import urlparse
 import answers as ab
 import apply_window as aw
 import gmail_verify
-from common import CONFIG, log
+from common import CONFIG, PROFILE, log
 
 
 class Stop(Exception):
     """End the automatic part; the window stays open for him."""
 
 
-SCAN_JS = """() => {
+SCAN_JS = """(opt) => {
+  opt = opt || {};
   const vis = e => !!(e && (e.offsetParent !== null || (e.getClientRects && e.getClientRects().length)));
   const txt = e => (e ? (e.innerText || e.textContent || '') : '').replace(/\\s+/g, ' ').trim();
+  document.querySelectorAll('[data-pipeline-idx]').forEach(e => e.removeAttribute('data-pipeline-idx'));
   let wraps = [...document.querySelectorAll('[data-automation-id^="formField-"], fieldset')].filter(vis)
       .filter(w => !w.closest('#pipeline-review-panel'));
   wraps = wraps.filter(w => !wraps.some(o => o !== w && w.contains(o)));
+  if (opt.onlyNew) wraps = wraps.filter(w => !w.hasAttribute('data-pipeline-seen'));
   const optLabel = i => { if (i.labels && i.labels.length) return txt(i.labels[0]);
       const p = i.closest('label'); return p ? txt(p) : (i.getAttribute('aria-label') || ''); };
   const out = [];
@@ -71,7 +74,9 @@ SCAN_JS = """() => {
     if (!kind || kind === 'readonly' || !label) return;
     const required = /[*✱]/.test(label) || (ctl && (ctl.getAttribute('aria-required') === 'true' || ctl.required)) ||
                      !!w.querySelector('[aria-required="true"]');
-    out.push({idx: n, label: label.replace(/[*✱]/g, '').trim(), kind, value: (value || '').trim(), options, required: !!required});
+    if (opt.tagExp) w.setAttribute('data-pipeline-exp', '1');
+    out.push({idx: n, label: label.replace(/[*✱]/g, '').trim(), kind, value: (value || '').trim(), options, required: !!required,
+              exp: w.hasAttribute('data-pipeline-exp')});
   });
   return out;
 }"""
@@ -102,6 +107,122 @@ STATE_JS = """() => {
 }"""
 
 NEXT_IDS = ("pageFooterNextButton", "bottom-navigation-next-button")
+
+# My Experience page (Nov 21 fix): Work Experience / Education / Languages start EMPTY behind an "Add" button, so the
+# field scan found nothing there. ADD_JS lists the visible Add buttons with the section they belong to. Workday's
+# button says "Add" for an empty section and "Add Another" once it has an entry (then the code leaves it alone).
+ADD_JS = """() => {
+  const vis = e => !!(e && (e.offsetParent !== null || (e.getClientRects && e.getClientRects().length)));
+  const txt = e => (e ? (e.innerText || e.textContent || '') : '').replace(/\\s+/g, ' ').trim();
+  document.querySelectorAll('[data-pipeline-add]').forEach(e => e.removeAttribute('data-pipeline-add'));
+  const btns = [...document.querySelectorAll('button, [role=button]')].filter(vis).filter(b => {
+    const t = txt(b), a = b.getAttribute('aria-label') || '', id = b.getAttribute('data-automation-id') || '';
+    return /^add( another)?$/i.test(t) || /^add\\b/i.test(a) || ['Add', 'add-button', 'addAnother'].includes(id); });
+  return btns.map((b, i) => {
+    b.setAttribute('data-pipeline-add', String(i));
+    const aria = b.getAttribute('aria-label') || '';
+    let sec = /^add\\s+\\S/i.test(aria) ? aria.replace(/^add\\s+(another\\s+)?/i, '') : '';
+    for (let n = b.parentElement; n && n !== document.body && !sec; n = n.parentElement) {
+      const h = n.querySelector('h2, h3, h4, legend, [role=heading]'); if (h && txt(h)) sec = txt(h); }
+    return {i, text: txt(b), aria, section: sec};
+  });
+}"""
+MARK_SEEN_JS = """() => { document.querySelectorAll('[data-automation-id^="formField-"], fieldset')
+  .forEach(w => w.setAttribute('data-pipeline-seen', '1')); }"""
+SECTIONS = (("work", r"work experience|employment|work history|professional experience"), ("edu", r"education"),
+            ("lang", r"language"), ("skills", r"skill"))
+
+
+def _section_key(text: str) -> str:
+    t = (text or "").lower()
+    return next((k for k, pat in SECTIONS if re.search(pat, t)), "")
+
+
+def _mm_yyyy(text: str) -> str:
+    mm, yy = _month_year(text)
+    return f"{mm}/{yy}" if yy else ""
+
+
+def experience_plan(profile: dict) -> dict:
+    """What goes into My Experience, only from master_profile.json (verified bullets only, no start year for school)."""
+    work = []
+    for e in profile.get("experience", []):
+        title, dates = e.get("title", ""), e.get("dates", "")
+        m = re.match(r"^(.*?)\s*\(([^)]*\d{4}[^)]*)\)\s*$", title)        # "Lead ... (July 2026 – Present)"
+        if m:
+            title, dates = m.group(1).strip(), m.group(2)
+        parts = re.split(r"\s*[–—-]\s*", dates) if dates else []
+        start, end = (parts + ["", ""])[:2]
+        current = bool(re.search(r"present|current|now", end, re.I))
+        bullets = [b["text"] for b in e.get("bullets", []) if b.get("verified") is True]
+        work.append({"title": title, "company": e.get("organization", ""), "location": e.get("location", ""),
+                     "start": _mm_yyyy(start), "end": "" if current else _mm_yyyy(end), "current": current,
+                     "description": "\n".join(bullets)})
+    ed = profile.get("education", {})
+    school = (ed.get("school") or "").split(",")[-1].strip()
+    deg = ed.get("degree", "")
+    majors = re.split(r"\s*(?:,|\band\b|&)\s*", deg.split(" in ", 1)[1]) if " in " in deg else []
+    grad = ed.get("graduation", "")
+    edu = [{"school": school, "degree": deg.split(" in ")[0].strip(), "majors": [x for x in majors if x],
+            "gpa": ed.get("gpa", ""), "grad": _mm_yyyy(grad), "grad_year": (re.search(r"20\d\d", grad) or [""])[0],
+            # start year only when he stated it (education.start, e.g. "Fall 2024"); a month only if he gave one
+            "start_year": (re.search(r"20\d\d", ed.get("start") or "") or [""])[0], "start": _mm_yyyy(ed.get("start") or "")}] \
+        if school else []
+    langs = []
+    for t in profile.get("skills", {}).get("languages", []):
+        m = re.match(r"^(\w+)\s+in\s+(\w+)", t)                    # "Conversational in Arabic"
+        langs.append({"language": m.group(2), "level": m.group(1)} if m else {"language": t.strip(), "level": ""})
+    return {"work": work, "edu": edu, "lang": langs, "skills": list(profile.get("skills", {}).get("technical", []))}
+
+
+def experience_answer(key: str, label: str, kind: str, entry: dict):
+    """Answer for one field of a My Experience entry. Returns a list of candidates to try in order, 'tick',
+    or None (leave it: never invented, e.g. a school start year)."""
+    q = ab.norm(label)
+    if key == "work":
+        if re.search(r"currently work|current(ly)? (employed|job|position|role)|i work here|still work", q):
+            return "tick" if entry.get("current") else None
+        if re.search(r"title|position|role$", q):
+            return [entry["title"]]
+        if re.search(r"company|employer|organi[sz]ation", q):
+            return [entry["company"]]
+        if re.search(r"location|city", q):
+            return [entry["location"]]
+        if re.search(r"^from\b|start", q):
+            return [entry["start"]] if entry["start"] else None
+        if re.search(r"^to\b|end( date)?$|^end", q):
+            return [entry["end"]] if entry["end"] else None
+        if re.search(r"description|responsibilit|duties|summary|accomplish", q):
+            return [entry["description"]] if entry["description"] else None
+    elif key == "edu":
+        if re.search(r"school|university|college|institution", q):
+            return [entry["school"]]
+        if re.search(r"field of study|major|discipline|concentration|area of study", q):
+            if kind == "multiselect":
+                return ["+".join(entry["majors"])]                 # one selection per major
+            return [" and ".join(entry["majors"])] if kind in ("text", "textarea") else list(entry["majors"])
+        if re.search(r"degree", q):
+            return [entry["degree"], "BBA", "Bachelor's Degree", "Bachelors Degree", "Bachelor's", "Bachelor"]
+        if re.search(r"gpa|grade|overall result|average", q):
+            return [entry["gpa"]]
+        if re.search(r"^to\b|last year|end|graduat|expected|completion", q):
+            return [entry["grad"] if kind == "date" else entry["grad_year"]]
+        if re.search(r"^from\b|first year|start", q):
+            v = entry.get("start") if kind == "date" else entry.get("start_year")
+            return [v] if v else None                               # never invented: only education.start
+        return None
+    elif key == "lang":
+        if re.search(r"native|fluent", q) and kind == "checkbox":
+            return None
+        if re.search(r"^language$|^languages?$|language name|select (a )?language", q):
+            return [entry["language"]]
+        if re.search(r"proficien|level|reading|writing|speaking|comprehension|overall|listening", q):
+            lv = entry.get("level", "")
+            return [lv, "Intermediate"] if lv.lower() == "conversational" else ([lv] if lv else None)
+    elif key == "skills":
+        if re.search(r"skill", q):
+            return ["+".join(entry["skills"])]
+    return None
 DONE_TEXT = ("Workday: the pipeline filled what it could. Check every field (the panel on Review lists what to fix). "
              "Only you click Submit.")
 
@@ -136,6 +257,7 @@ class WorkdayFiller:
         self.wait_s = 60 * (wait_minutes if wait_minutes is not None else CONFIG.get("workday_wait_minutes", 20))
         self.filled: dict = {}                       # label -> value the code entered (for the Review check)
         self.skipped: list = []                      # optional questions left blank
+        self.exp_left: list = []                     # My Experience fields only he can fill (e.g. a school start year)
         self.started = time.time()
         self.auth_tries = 0
         self.host = (urlparse(page.url).hostname or "").lower()
@@ -420,8 +542,14 @@ class WorkdayFiller:
             return False
 
     def fill_page(self, name: str):
+        self.fill_experience()
         pending = []
+        if self.exp_left:
+            pending += self.exp_left
+            self.exp_left = []
         for f in self.scan():
+            if f.get("exp"):
+                continue        # My Experience entry fields: handled by fill_experience (never from the answer bank)
             if f["kind"] == "file":
                 if not f["value"]:
                     self.upload(f) or (f["required"] and pending.append(self._item(f, "unknown", "upload your resume")))
@@ -444,6 +572,82 @@ class WorkdayFiller:
             n = len(pending)
             self.pause(f"{n} question{'s' if n > 1 else ''} need you on '{name}'. Answer in the Control Center "
                        "(Apply tab) or on the page.", lambda: self._resolved(pending), pending, name)
+
+    # ------------------------------------------------ My Experience (Add buttons -> entries from the profile)
+    def add_buttons(self) -> list[dict]:
+        try:
+            return [dict(b, key=_section_key(b["section"])) for b in self.page.evaluate(ADD_JS)]
+        except Exception:  # noqa: BLE001
+            return []
+
+    def fill_experience(self):
+        """Adds Work Experience / Education / Languages entries (and Skills) when the section is empty."""
+        btns = [b for b in self.add_buttons() if b["key"]]
+        has_skills_box = False
+        try:
+            has_skills_box = any(f["kind"] == "multiselect" and re.search(r"skill", ab.norm(f["label"])) and not f["value"]
+                                 and not f.get("exp") for f in self.scan())
+        except Exception:  # noqa: BLE001
+            pass
+        if not btns and not has_skills_box:
+            return
+        plan = experience_plan(PROFILE)
+        done = set()
+        for b in btns:
+            key = b["key"]
+            if key in done:
+                continue
+            done.add(key)
+            if re.search(r"another", f'{b["text"]} {b["aria"]}', re.I):
+                print(f"  My Experience: '{b['section']}' already has entries; left as is.", flush=True)
+                continue
+            entries = ([{"skills": plan["skills"]}] if plan["skills"] else []) if key == "skills" else plan.get(key, [])
+            for n, entry in enumerate(entries or []):
+                btn = next((x for x in self.add_buttons() if x["key"] == key), None)
+                if btn is None:
+                    break
+                self.page.evaluate(MARK_SEEN_JS)
+                self.click(self.page.locator(f'[data-pipeline-add="{btn["i"]}"]'))
+                self.page.wait_for_timeout(1500)
+                self.fill_entry(key, entry, f'{b["section"]} {n + 1}')
+        if has_skills_box and "skills" not in done and plan["skills"]:
+            for f in self.scan():
+                if f["kind"] == "multiselect" and re.search(r"skill", ab.norm(f["label"])) and not f["value"]:
+                    for sk in plan["skills"]:
+                        self.fill_field(f, sk)
+                    break
+
+    def fill_entry(self, key: str, entry: dict, where: str):
+        new = lambda: self.page.evaluate(SCAN_JS, {"onlyNew": True, "tagExp": True})
+        for f in new():                       # "I currently work here" first: it hides the To date
+            if f["kind"] == "checkbox" and not f["value"] and experience_answer(key, f["label"], "checkbox", entry) == "tick":
+                target = self.wrap(f).locator("input[type=checkbox], [role=checkbox]").first
+                try:
+                    aw.safe_click(target, self.page, timeout=3000)
+                except aw.GuardError:
+                    raise
+                except Exception:  # noqa: BLE001  (styled box over a hidden input)
+                    aw.safe_click(target, self.page, force=True)
+                self.filled[f["label"]] = "checked"
+                self.nap(0.6)
+        for f in new():
+            if f["kind"] in ("checkbox", "checkgroup", "file") or f["value"]:
+                continue
+            cands = experience_answer(key, f["label"], f["kind"], entry)
+            ok = False
+            if isinstance(cands, list):
+                for c in [c for c in cands if c]:
+                    if "+" in c and f["kind"] == "multiselect":
+                        ok = all([self.fill_field(f, part) for part in c.split("+")])
+                    elif "+" not in c:
+                        ok = self.fill_field(f, c)
+                    if ok:
+                        break
+            if not ok and f["required"]:
+                self.exp_left.append(self._item(f, "never", f"{where}: fill this on the page (it is not in your profile)"
+                                                if cands is None else f"{where}: pick it on the page"))
+            elif not ok:
+                self.skipped.append(f"{where}: {f['label']}")
 
     def _item(self, f, cat, note=""):
         return {"label": f["label"], "kind": f["kind"], "options": f.get("options") or [], "category": cat,

@@ -38,6 +38,11 @@ EEO = re.compile(
     r"transgender|pronoun|lgbt|military spouse|self[- ]identif)", re.I)
 ESSAY = re.compile(r"\b(why (are you|do you|would you|this|our|us)|why .* interest|describe|tell us|explain|"
                    r"what (interests|excites|motivates|makes)|cover letter|in (\d+|a few) (words|sentences)|elaborate)", re.I)
+# "How did you hear / where did you find this job": always the real source of THIS posting (heard_from), never a
+# saved answer, because the source differs per job (Nov 21: a saved "Company Website" would be wrong for LinkedIn jobs).
+SOURCE = re.compile(r"how did you (first )?(hear|learn|find)|^source$|referral source|"
+                    r"where did you (first )?(hear|find|see|locate|learn|come across)|(first )?(locate|found) this (position|job|role)",
+                    re.I)
 DECLINE = re.compile(r"(decline|do not wish|don.?t wish|not wish to|prefer not|choose not|do not want to answer|"
                      r"don.?t want to answer|not to (answer|disclose|self)|i don.?t know)", re.I)
 
@@ -106,14 +111,14 @@ def seed_rules(job: dict | None = None) -> list[tuple[str, str]]:
         (r"(expected |anticipated )?graduation (date|month)|when (do|will) you graduate|degree completion date", grad),
         (r"graduation year|year of graduation|class of", year),
         (r"\bgpa\b|grade point", e.get("gpa", "")),
-        (r"^(major|majors|field of study|area of study|concentration)s?$", sa.get("majors", "").replace(";", ",")),
+        (r"^(what (is|are) )?(your )?(current |intended |declared )?(major|majors|field of study|area of study|concentration)s?$",
+         sa.get("majors", "").replace(";", ",")),
         (r"^(school|university|college|institution|school or university)( name)?$", "University of Houston"),
-        (r"^degree( type| level)?$|highest (level of )?education|degree (are you )?(pursuing|seeking)",
+        (r"^degree( type| level)?$|highest (level of )?education|highest degree|degree (are you )?(pursuing|seeking)",
          "Bachelor of Business Administration"),
         (r"currently enrolled|current(ly a)? student|pursuing a (bachelor|degree)", yes),
         (r"class (standing|level|year)|year in school|academic (level|standing)", sa.get("class_year", "")),
         (r"(when|date) (can|could) you start|availability|available to start|which (term|season)", CONFIG.get("season", "")),
-        (r"how did you (hear|learn|find)|^source$|referred by|where did you (hear|find|see)", heard_from(job)),
         (r"text message|sms|receive texts", no),
     ]
     return [(p, a) for p, a in rules if a]
@@ -141,8 +146,8 @@ def _write_bank(bank: dict) -> None:
 
 def save_answer(question: str, answer: str) -> None:
     q, a = norm(question), str(answer or "").strip()
-    if not q or not a or NEVER.search(q) or EEO.search(q):
-        return   # never stores attestations, salary, criminal, demographic answers
+    if not q or not a or NEVER.search(q) or EEO.search(q) or SOURCE.search(q):
+        return   # never stores attestations, salary, criminal, demographic answers, or the job source (per job)
     bank = _read_bank()
     bank[q] = a
     _write_bank(bank)
@@ -190,6 +195,8 @@ def classify(label: str, kind: str = "text", job: dict | None = None) -> tuple[s
         return "never", ""
     if EEO.search(q):
         return "eeo", "decline"
+    if SOURCE.search(q):
+        return "seed", heard_from(job)
     bank = _read_bank()
     if q in bank:
         return "learned", bank[q]

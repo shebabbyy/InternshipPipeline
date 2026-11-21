@@ -4,7 +4,8 @@
 <body>
 <!-- A small imitation of Workday's candidate flow, built only for pipeline/tests/phase2_checks.py.
      It uses the same data-automation-id names the filler looks for. Steps: posting -> start modal -> create account
-     -> My Information -> Application Questions -> Voluntary Disclosures -> Review. -->
+     -> My Information -> My Experience (sections start empty behind Add buttons,
+     like the real one) -> Application Questions -> Voluntary Disclosures -> Review. -->
 <div data-automation-id="progressBar"><span data-automation-id="progressBarActiveStep" id="step"></span></div>
 <h2 id="head"></h2>
 <div id="root"></div>
@@ -21,12 +22,47 @@ const dd = (id, label, opts, req) => field(id, label,
 const radios = (id, label, opts, req) => `<fieldset data-automation-id="formField-${id}"><legend><label>${label}${req ? '*' : ''}</label></legend>` +
   opts.map((o, i) => `<input type="radio" name="${id}" id="${id}${i}" value="${o}"><label for="${id}${i}">${o}</label>`).join('') + '</fieldset>';
 const box = (id, label, req) => field(id, label, `<input type="checkbox" id="${id}" ${req ? 'aria-required="true"' : ''}>`, req);
+const ms = (id, label, opts, req) => field(id, label,
+  `<div data-automation-id="multiselectInputContainer"><input id="${id}" type="text" data-ms="${opts.join('|')}"></div><div class="sel" id="${id}-sel"></div>`, req);
+const date = (id, label, req, yearOnly) => field(id, label, (yearOnly ? '' : `<input data-automation-id="dateSectionMonth-input" id="${id}-m" type="text">`) +
+  `<input data-automation-id="dateSectionYear-input" id="${id}-y" type="text">`, req);
+const N = {work: 0, edu: 0, lang: 0};
+const addBtn = (key, title) => `<button type="button" data-automation-id="Add" aria-label="Add ${title}" data-add="${key}">${N[key] ? 'Add Another' : 'Add'}</button>`;
+function section(key, title) { return `<div role="group" id="sec-${key}"><h3>${title}</h3><div class="entries"></div>${addBtn(key, title)}</div>`; }
+function addEntry(key) {
+  const n = ++N[key], p = key + n, sec = document.getElementById('sec-' + key);
+  let h = `<div class="entry" data-key="${key}"><h4>${sec.querySelector('h3').textContent} ${n}</h4>`;
+  if (key === 'work') h += text(p + '-title', 'Job Title', 1) + text(p + '-company', 'Company', 1) + text(p + '-loc', 'Location', 0) +
+      box(p + '-cur', 'I currently work here', 0) + date(p + '-from', 'From', 1) + `<div id="${p}-towrap">` + date(p + '-to', 'To', 1) + '</div>' +
+      field(p + '-desc', 'Role Description', `<textarea id="${p}-desc"></textarea>`, 0);
+  if (key === 'edu') h += ms(p + '-school', 'School or University', ['University of Houston', 'University of Houston-Clear Lake', 'Houston Community College'], 1) +
+      dd(p + '-deg', 'Degree', ['High School Diploma', "Associate's Degree", "Bachelor's Degree", "Master's Degree"], 1) +
+      ms(p + '-fos', 'Field of Study', ['Finance', 'Accounting', 'Economics'], 0) + text(p + '-gpa', 'Overall Result (GPA)', 0) +
+      date(p + '-first', 'From', 1, true) + date(p + '-last', 'To (Actual or Expected)', 0, true);
+  if (key === 'lang') h += dd(p + '-lang', 'Language', ['English', 'Arabic', 'Spanish'], 1) + box(p + '-native', 'I am fluent in this language', 0) +
+      dd(p + '-speak', 'Speaking', ['Beginner', 'Intermediate', 'Advanced', 'Fluent'], 1);
+  sec.querySelector('.entries').insertAdjacentHTML('beforeend', h + '</div>');
+  sec.querySelector('[data-add]').outerHTML = addBtn(key, sec.querySelector('h3').textContent);
+}
+function collectExp() {
+  const v = id => { const e = document.getElementById(id); return e ? e.value : null; };
+  const sel = id => [...document.querySelectorAll('#' + id + '-sel [data-automation-id=selectedItem]')].map(e => e.textContent);
+  const out = {work: [], edu: [], lang: [], skills: sel('skills')};
+  for (let i = 1; i <= N.work; i++) out.work.push({title: v(`work${i}-title`), company: v(`work${i}-company`), loc: v(`work${i}-loc`),
+      cur: document.getElementById(`work${i}-cur`).checked, from: v(`work${i}-from-m`) + '/' + v(`work${i}-from-y`),
+      to: document.getElementById(`work${i}-to-m`) ? v(`work${i}-to-m`) + '/' + v(`work${i}-to-y`) : null, desc: v(`work${i}-desc`)});
+  for (let i = 1; i <= N.edu; i++) out.edu.push({school: sel(`edu${i}-school`), deg: val(`edu${i}-deg`), fos: sel(`edu${i}-fos`),
+      gpa: v(`edu${i}-gpa`), first: v(`edu${i}-first-y`), last: v(`edu${i}-last-y`)});
+  for (let i = 1; i <= N.lang; i++) out.lang.push({lang: val(`lang${i}-lang`), native: document.getElementById(`lang${i}-native`).checked,
+      speak: val(`lang${i}-speak`)});
+  return out;
+}
 const next = `<button data-automation-id="pageFooterNextButton" id="next">Next</button>`;
 function render() {
   const st = S.step;
-  document.getElementById('step').textContent = {myinfo: 'My Information', questions: 'Application Questions',
+  document.getElementById('step').textContent = {myinfo: 'My Information', experience: 'My Experience', questions: 'Application Questions',
      voluntary: 'Voluntary Disclosures', review: 'Review'}[st] || '';
-  document.getElementById('head').textContent = {posting: 'Accounting Intern', auth: 'Create Account', myinfo: 'My Information',
+  document.getElementById('head').textContent = {posting: 'Accounting Intern', auth: 'Create Account', myinfo: 'My Information', experience: 'My Experience',
      questions: 'Application Questions', voluntary: 'Voluntary Disclosures', review: 'Review'}[st] || '';
   if (st === 'posting') root.innerHTML = `<a href="#" data-automation-id="adventureButton">Apply</a>`;
   if (st === 'start') root.innerHTML = `<a href="#" data-automation-id="autofillWithResume">Autofill with Resume</a>
@@ -41,6 +77,10 @@ function render() {
       dd('dtype', 'Phone Device Type', ['Landline', 'Mobile'], 1) +
       radios('prev', 'Have you previously worked for Tokio Marine HCC?', ['Yes', 'No'], 1) +
       field('cv', 'Resume/CV', `<input type="file" id="cv">`, 1) + next;
+  if (st === 'experience') { if (S.expRendered) return; S.expRendered = true;
+      root.innerHTML = section('work', 'Work Experience') + section('edu', 'Education') + section('lang', 'Languages') +
+      `<div role="group"><h3>Skills</h3>` + ms('skills', 'Type to Add Skills', ['Microsoft Excel', 'Microsoft Word', 'Excel VBA'], 0) + '</div>' +
+      field('cv2', 'Resume/CV', `<input type="file" id="cv2">`, 0) + next; }
   if (st === 'questions') root.innerHTML =
       dd('auth', 'Are you legally authorized to work in the United States?', ['Yes', 'No'], 1) +
       radios('spon', 'Will you now or in the future require sponsorship?', ['Yes', 'No'], 1) +
@@ -66,6 +106,11 @@ function radio(name) { const c = document.querySelector(`input[name=${name}]:che
 document.addEventListener('click', ev => {
   const t = ev.target, aid = t.getAttribute && t.getAttribute('data-automation-id');
   const lb = document.getElementById('lb');
+  if (t.dataset && t.dataset.add) { addEntry(t.dataset.add); return; }
+  if (t.id && /-cur$/.test(t.id)) { const w = document.getElementById(t.id.replace('-cur', '-towrap')); if (w) w.innerHTML = t.checked ? '' : date(t.id.replace('-cur', '-to'), 'To', 1); return; }
+  if (t.getAttribute && t.getAttribute('role') === 'option' && lb.dataset.ms) {
+    document.getElementById(lb.dataset.ms + '-sel').insertAdjacentHTML('beforeend', `<span data-automation-id="selectedItem">${t.textContent}</span>`);
+    const inp = document.getElementById(lb.dataset.ms); inp.value = ''; lb.hidden = true; lb.dataset.ms = ''; return; }
   if (aid === 'adventureButton') { ev.preventDefault(); S.step = 'start'; render(); }
   else if (aid === 'autofillWithResume' || aid === 'applyManually') { ev.preventDefault(); S.start = aid; S.step = 'auth'; render(); }
   else if (aid === 'createAccountSubmitButton') {
@@ -73,6 +118,7 @@ document.addEventListener('click', ev => {
     S.account = document.querySelector('[data-automation-id=email]').value; S.pw = document.querySelector('[data-automation-id=password]').value;
     S.step = 'myinfo'; render(); }
   else if (t.getAttribute && t.getAttribute('aria-haspopup') === 'listbox') {
+    lb.dataset.ms = '';
     lb.innerHTML = t.dataset.opts.split('|').map(o => `<div role="option">${o}</div>`).join(''); lb.hidden = false; lb.dataset.for = t.id; }
   else if (t.getAttribute && t.getAttribute('role') === 'option') {
     document.getElementById(lb.dataset.for).textContent = t.textContent; lb.hidden = true; }
@@ -82,9 +128,16 @@ document.addEventListener('click', ev => {
     ids.forEach(i => S.data[i] = val(i));
     ['prev', 'spon'].forEach(n => { if (document.querySelector(`input[name=${n}]`)) S.data[n] = radio(n); });
     if (document.getElementById('cv')) S.data.cv = document.getElementById('cv').files.length;
-    const order = ['myinfo', 'questions', 'voluntary', 'review'];
+    if (S.step === 'experience') S.exp = collectExp();
+    const order = ['myinfo', 'experience', 'questions', 'voluntary', 'review'];
     S.step = order[order.indexOf(S.step) + 1]; render(); }
   else if (t.id === 'submit') { S.submitted = true; }
+});
+document.addEventListener('keydown', ev => {     // multiselect: type, press Enter, pick from the prompt list
+  const t = ev.target; if (ev.key !== 'Enter' || !t.dataset || !t.dataset.ms) return;
+  const lb = document.getElementById('lb'), q = t.value.toLowerCase();
+  lb.innerHTML = t.dataset.ms.split('|').filter(o => o.toLowerCase().includes(q)).map(o => `<div role="option" data-automation-id="promptOption">${o}</div>`).join('');
+  lb.hidden = false; lb.dataset.ms = t.id; lb.dataset.for = '';
 });
 render();
 </script></body></html>
