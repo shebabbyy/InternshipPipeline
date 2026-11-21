@@ -7,7 +7,7 @@
                                         then create outreach drafts
   python pipeline/run_all.py --status   Just print the summary
   python pipeline/run_all.py --sync     Just sync the Google Sheet (pull your edits, push local changes)
-  python pipeline/run_all.py --step discover|score|tailor|outreach   Run one stage only (Control Center)
+  python pipeline/run_all.py --step discover|score|tailor|resolve|outreach   Run one stage only (Control Center)
   python pipeline/run_all.py --apply --job ID                        Open just one application
 
 Every laptop mode takes the shared lock (pipeline.lock), so only one job runs at a time.
@@ -92,7 +92,7 @@ def main():
     ap.add_argument("--auto", action="store_true", help="scheduled run: exit quietly if it ran in the last 12 hours")
     ap.add_argument("--retailor", action="store_true", help="rebuild resumes/cover letters for every Packet ready job")
     ap.add_argument("--sync", action="store_true", help="only sync the Google Sheet")
-    ap.add_argument("--step", choices=["discover", "score", "tailor", "outreach"], help="run a single stage")
+    ap.add_argument("--step", choices=["discover", "score", "tailor", "resolve", "outreach"], help="run a single stage")
     ap.add_argument("--job", help="with --apply: open only this job id")
     args = ap.parse_args()
     load_env()
@@ -115,6 +115,7 @@ def main():
     import claude_discover
     import fill
     import outreach
+    import resolver   # phase 3: job-board links -> the company's own application page
     import tailor
 
     if args.sync:
@@ -131,6 +132,8 @@ def main():
             stage("Scoring", triage.run)
         elif args.step == "tailor":
             stage("Tailoring", tailor.run)
+        elif args.step == "resolve":
+            stage("Direct links", resolver.run)
         else:
             stamp_applied(conn)
             stage("Outreach drafts", outreach.run)
@@ -181,6 +184,7 @@ def main():
         log("Skipped discovery (ran less than 12 hours ago).")
     stage("Scoring", triage.run)          # always: also scores rows that arrived from the Sheet
     stage("Tailoring", tailor.run)
+    stage("Direct links", resolver.run)   # phase 3: company links for job-board postings (new ones only)
     stamp_applied(conn)
     stage("Outreach drafts", outreach.run)  # for anything you marked Applied in the Sheet
     sync_to_sheet(conn)

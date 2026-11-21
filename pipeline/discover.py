@@ -1,7 +1,8 @@
 """Stage 1a: find new internship postings.
 
 Sources:
-  * Company watchlist: public Greenhouse / Lever / Workday career-site feeds (the core source).
+  * Company watchlist: public Greenhouse / Lever / Workday / SmartRecruiters career-site feeds (the core source),
+    plus the ats_directory feeds marked watch: true (phase 3).
   * JobSpy (LinkedIn/Indeed/Google/ZipRecruiter/Glassdoor), laptop only and optional.
 Bauer Gateway / Handshake / LinkedIn alerts arrive by email; add good ones to the Sheet by hand
 (Company + Role + Link) and the pipeline picks them up.
@@ -183,7 +184,29 @@ def workday(entry):
             time.sleep(0.4)
 
 
-FETCHERS = {"greenhouse": greenhouse, "lever": lever, "workday": workday}
+def smartrecruiters(entry):
+    """SmartRecruiters public postings API (phase 3; e.g. Pilot Company). Details only for postings we might keep."""
+    board = entry["board"]
+    data = get_json(requests.get(f"https://api.smartrecruiters.com/v1/companies/{board}/postings?q=intern&limit=100",
+                                 headers=UA, timeout=30))
+    for j in data.get("content", []):
+        loc = j.get("location") or {}
+        where = ", ".join(x for x in (loc.get("city"), loc.get("region")) if x)
+        desc = ""
+        if is_intern(j.get("name") or "") and near_houston(where) and relevant(j.get("name") or ""):
+            try:
+                d = get_json(requests.get(f"https://api.smartrecruiters.com/v1/companies/{board}/postings/{j['id']}",
+                                          headers=UA, timeout=30))
+                secs = (d.get("jobAd") or {}).get("sections") or {}
+                desc = clean_text(" ".join((v or {}).get("text", "") for v in secs.values() if isinstance(v, dict)))
+            except Exception:  # noqa: BLE001
+                pass
+        yield {"company": entry["name"], "title": j.get("name") or "", "location": where,
+               "url": f"https://jobs.smartrecruiters.com/{board}/{j.get('id')}", "description": desc, "source": "smartrecruiters"}
+
+
+FETCHERS = {"greenhouse": greenhouse, "lever": lever, "workday": workday, "smartrecruiters": smartrecruiters}
+DIRECTORY_FILES = (ROOT / "ats_directory.yaml", ROOT / "ats_directory_found.yaml")   # phase 3: entries with watch: true
 
 
 def _load(path) -> list[dict]:
@@ -196,6 +219,12 @@ def _load(path) -> list[dict]:
 def watchlist_entries(include_candidates: bool = False) -> list[dict]:
     """config.yaml watchlist + links verified by --check (+ untested candidates when asked). One per link."""
     entries = list(CONFIG.get("watchlist") or []) + _load(FOUND_FILE)
+    for path in DIRECTORY_FILES:   # phase 3: company feeds the link resolver knows about (watch: true)
+        try:
+            rows = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("companies") or []
+        except Exception:  # noqa: BLE001
+            rows = []
+        entries += [r for r in rows if r.get("watch") and r.get("ats") in FETCHERS]
     if include_candidates:
         entries += _load(CANDIDATES_FILE)
     seen, out = set(), []

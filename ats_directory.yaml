@@ -1,0 +1,38 @@
+# Company -> careers system, used by the job-board link resolver (phase 3, pipeline/resolver.py).
+# Researched Nov 21, 2026 from public pages for the companies whose postings came from LinkedIn.
+# The watchlist feeds (config.yaml + watchlist_found.yaml) are added automatically; don't repeat them here.
+#
+#   ats: workday | greenhouse | lever | smartrecruiters   -> public feed: the resolver finds the exact posting
+#        icims | successfactors | oracle | dayforce | paylocity | rippling | phenom | other
+#                                                         -> no public feed: opens the company's careers search
+#   board:    Greenhouse / Lever / SmartRecruiters board name     url: Workday site (feed) or careers address
+#   search:   careers search address; {q} becomes the job title's key words (unverified ones say so)
+#   careers:  a careers page the resolver reads once for links to an ATS
+#   watch: true  -> discovery also scans this feed every day (Houston internships only)
+#   aliases:  other spellings of the company name on job boards
+companies:
+  - {name: "American National", aliases: ["American National Insurance", "American National Insurance Company"],
+     ats: greenhouse, board: americannational, watch: true}
+  - {name: "Pilot Company", aliases: ["Pilot Flying J", "Pilot Travel Centers"], ats: smartrecruiters, board: PilotCompany,
+     watch: true, careers: "https://careers.pilotcompany.com/"}
+  - {name: "Quanta Services", ats: icims, search: "https://careers-quanta.icims.com/jobs/search?ss=1&searchKeyword={q}"}
+  - {name: "ExxonMobil", aliases: ["Exxon Mobil", "Exxon Mobil Corporation"], ats: successfactors,
+     search: "https://jobs.exxonmobil.com/search/?q={q}"}
+  - {name: "ENGIE", aliases: ["ENGIE North America", "ENGIE Energy Marketing"], ats: successfactors,
+     search: "https://jobs.engie.com/search/?q={q}"}
+  - {name: "Phillips 66", ats: successfactors, search: "https://careers.phillips66.com/search/?q={q}"}   # search path unverified
+  - {name: "Boardwalk Pipelines", aliases: ["Boardwalk Pipeline Partners"], ats: dayforce,
+     url: "https://us251.dayforcehcm.com/CandidatePortal/en-US/bwp"}
+  - {name: "Oceaneering", aliases: ["Oceaneering International"], ats: phenom,
+     search: "https://careers.oceaneering.com/global/en/search-results?keywords={q}"}
+  - {name: "Constellation", aliases: ["Constellation Energy"], ats: other, url: "https://jobs.constellationenergy.com/internships"}
+  - {name: "DESRI", ats: rippling, url: "https://ats.rippling.com/desri-careers/jobs"}
+  - {name: "Lummus Technology", ats: other, url: "https://careers.lummustechnology.com/"}
+  - {name: "BNY", aliases: ["BNY Mellon", "The Bank of New York Mellon"], ats: oracle,
+     careers: "https://www.bny.com/corporate/global/en/about-us/careers.html"}
+  - {name: "Hilcorp", aliases: ["Hilcorp Energy", "Hilcorp Energy Company"], ats: other, careers: "https://www.hilcorp.com/careers/"}
+  - {name: "Ryan", aliases: ["Ryan LLC"], ats: other, careers: "https://ryan.com/careers/"}   # Workday per ryan.com; tenant not known yet
+  - {name: "Simon-Kucher", aliases: ["Simon-Kucher & Partners"], ats: other, careers: "https://www.simon-kucher.com/en/careers"}
+  - {name: "Mauldin & Jenkins", ats: other, careers: "https://www.mjcpa.com/careers/"}
+  - {name: "Doeren Mayhew", aliases: ["Doeren Mayhew CPAs and Advisors"], ats: other, careers: "https://doeren.com/careers/"}
+  - {name: "Caldwell Companies", ats: paylocity}   # Paylocity board address not known; stays on the job board

@@ -35,15 +35,17 @@ JOB_BOARD_HOSTS = ("linkedin.com", "indeed.com", "glassdoor.com", "ziprecruiter.
 OTHER_ATS_HOSTS = ("icims.com", "taleo.net", "successfactors.com", "successfactors.eu", "sapsf.com", "oraclecloud.com",
                    "brassring.com", "jobvite.com", "smartrecruiters.com", "ashbyhq.com", "workable.com", "adp.com",
                    "ultipro.com", "ukg.com", "paylocity.com", "paycomonline.net", "avature.net", "phenompeople.com",
-                   "eightfold.ai", "csod.com", "dayforcehcm.com")
+                   "eightfold.ai", "csod.com", "dayforcehcm.com",
+                   # phase 3: more ATS hosts the link resolver can land on
+                   "rippling.com", "bamboohr.com", "teamtailor.com", "applytojob.com", "recruitee.com")
 
 BANNERS = {
     "workday": "Workday. The pipeline fills it from your profile and stops at Review (the panel there lists what "
                "to fix). Check every field. Only you click Submit.",
     "greenhouse_lever": "Filled from your profile. Check every field, answer any extra questions, then you click Submit.",
     "other_ats": "Click Simplify Autofill (the code never clicks it), then check every field. Only you click Submit.",
-    "job_board": "Job-board link. Click the employer's Apply button; the pipeline will resolve these links "
-                 "to the company site in a later update.",
+    "job_board": "Job-board link (no company link found). Click the employer's Apply button here; on the company "
+                 "site use Simplify Autofill. Only you click Submit.",
     "manual": "Unknown site. Apply by hand or with Simplify. Only you click Submit.",
 }
 REVIEW_BANNER = "REVIEW PAGE. Check every field against your resume. Only YOU click Submit. Screenshot saved."
@@ -168,12 +170,13 @@ def is_review_page(page) -> bool:
         return False
 
 
-def show_banner(page, kind: str, review: bool | None = None) -> bool:
-    """Draw or refresh the banner. Returns True when the page is a Review page."""
+def show_banner(page, kind: str, review: bool | None = None, text: str | None = None) -> bool:
+    """Draw or refresh the banner (text = a custom message, e.g. the careers-site hint). True on a Review page."""
     if review is None:
         review = is_review_page(page)
     try:
-        page.evaluate(_BANNER_JS, {"text": REVIEW_BANNER if review else BANNERS.get(kind, BANNERS["manual"]), "review": review})
+        page.evaluate(_BANNER_JS, {"text": REVIEW_BANNER if review else (text or BANNERS.get(kind, BANNERS["manual"])),
+                                   "review": review})
     except Exception:  # noqa: BLE001  (page navigating)
         pass
     return review
@@ -196,15 +199,17 @@ class Watcher:
     def __init__(self):
         self.tabs: dict = {}   # page -> (job, shot_taken)
 
-    def add(self, page, job, filled=None):
-        self.tabs[page] = [job, False, filled or {}]
+    def add(self, page, job, filled=None, banner=None):
+        self.tabs[page] = [job, False, filled or {}, banner]
 
     def tick(self):
         for page, state in list(self.tabs.items()):
             if page.is_closed():
                 self.tabs.pop(page, None)
                 continue
-            review = show_banner(page, route(page.url))
+            kind = route(page.url)
+            # the careers-site hint stays until he reaches a site the pipeline fills itself
+            review = show_banner(page, kind, text=state[3] if kind not in ("workday", "greenhouse_lever") else None)
             if review and not state[1]:
                 state[1] = True
                 try:

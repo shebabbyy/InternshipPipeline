@@ -24,3 +24,4 @@ last_auto_error.txt
 __pycache__/
 .pytest_cache/
 .venv/
+ats_directory_found.yaml

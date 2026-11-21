@@ -22,6 +22,7 @@ from pathlib import Path
 from common import CONFIG, PROFILE, ROOT, ask, db, email_for, log, mark_dirty
 import apply_window as aw   # phase 1: real Chrome over CDP, URL router, click guard, Review banner
 from answers import account_email   # phase 2: portal accounts always use Gmail (Nov 20 decision)
+import resolver   # phase 3: job-board links -> the employer's own site
 
 CLOSED_WORDS = ("no longer accepting applications", "no longer available", "position has been filled",
                 "job has been filled", "posting has expired", "job is no longer", "page you are looking for doesn't exist",
@@ -32,7 +33,8 @@ def fill_sheet(job: dict) -> Path:
     c, e, a = PROFILE["candidate"], PROFILE["education"], PROFILE["standard_answers"]
     folder = Path(job["resume"]).parent
     lines = [
-        f"FILL SHEET — {job['company']} | {job['title']}", f"Link: {job['url']}", "",
+        f"FILL SHEET — {job['company']} | {job['title']}", f"Link: {job['url']}",
+        *([f"Company link: {resolver.target(job)[0]}"] if resolver.target(job)[0] != job["url"] else []), "",
         f"First name: {c['name'].split()[0]}", f"Last name: {c['name'].split()[-1]}", f"Email: {email_for(job)}", f"Portal account email: {account_email()}", f"Phone: {c['phone']}",
         f"Location: {c['location']}", f"LinkedIn: {c['linkedin']}", "School: University of Houston",
         "Degree: Bachelor of Business Administration (BBA)", f"Majors: {a['majors']}",
@@ -375,8 +377,11 @@ def run(limit: int = 6, job_id: str | None = None) -> int:
             # reuse Chrome's empty first tab instead of leaving a stray blank tab in front
             blank = [pg for pg in ctx.pages if not pg.is_closed() and pg.url in ("about:blank", "chrome://newtab/", "")]
             page = blank[0] if (blank and not opened) else ctx.new_page()
+            go, hint = resolver.target(job)   # phase 3: the company's own link when one was found
+            if go != job["url"]:
+                log(f"  {job['company']}: opening the company link instead of the job board ({go[:90]})")
             try:
-                page.goto(job["url"], timeout=60000)
+                page.goto(go, timeout=60000)
                 page.wait_for_timeout(3000)
             except Exception as exc:  # noqa: BLE001
                 mark_dirty(conn, job["id"], status="BLOCKED", notes=f"Page did not load ({exc.__class__.__name__}). Open the link yourself.")
@@ -386,7 +391,7 @@ def run(limit: int = 6, job_id: str | None = None) -> int:
                 body = (page.inner_text("body", timeout=5000) or "").lower()
             except Exception:  # noqa: BLE001
                 body = ""
-            if any(w in body for w in CLOSED_WORDS):
+            if not hint and any(w in body for w in CLOSED_WORDS):   # a careers search page is not the posting
                 mark_dirty(conn, job["id"], status="SKIPPED", notes="Posting looks closed (page says it is no longer available).")
                 log(f"  {job['company']}: posting looks closed; skipped.")
                 page.close()
@@ -424,11 +429,12 @@ def run(limit: int = 6, job_id: str | None = None) -> int:
                     log(f"  {job['company']}: autofill skipped ({exc.__class__.__name__})")
             if not use_wd:
                 note = (f"Auto-filled {n} fields. Review, answer any custom questions, then Submit." if n else
-                        f"{aw.BANNERS[kind]} Answers to paste: {sheet.name}.")
+                        f"{hint or aw.BANNERS[kind]} Answers to paste: {sheet.name}.")
             mark_dirty(conn, job["id"], status="FILLED", notes=note)
             log(f"  {job['company']}: {note}")
-            aw.show_banner(page, kind)
-            watcher.add(page, job, filled)
+            custom = hint if kind not in ("workday", "greenhouse_lever") else None
+            aw.show_banner(page, kind, text=custom)
+            watcher.add(page, job, filled, banner=custom)
             try:
                 watcher.tick()   # if the filler reached Review: screenshot + field check right away
             except Exception:  # noqa: BLE001

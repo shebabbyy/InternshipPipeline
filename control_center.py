@@ -41,6 +41,7 @@ sys.path.insert(0, str(ROOT / "pipeline"))
 from common import CONFIG, DB_PATH, LOCK_PATH, STATUSES, lock_info, pid_alive  # noqa: E402  (no Playwright here, on purpose)
 import prospects  # noqa: E402  (read-only ranking from prospects.yaml + pipeline.db)
 import answers  # noqa: E402  (phase 2: Workday questions waiting for you; answers go to an inbox file, never the DB)
+import resolver  # noqa: E402  (phase 3: reads output/_resolved_links.json only; lookups run as a subprocess)
 
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW (Windows): child scripts never open a console
 
@@ -68,6 +69,7 @@ JOBS: dict[str, tuple[str, list[str]]] = {
     "rebuild": ("Rebuild packets", ["pipeline/run_all.py", "--retailor"]),
     "simplify": ("Simplify setup", ["pipeline/setup_simplify.py"]),
     "recheck": ("Re-check old jobs", ["pipeline/jobctl.py", "--recheck"]),
+    "resolve": ("Find company links", ["pipeline/resolver.py"]),
 }
 
 
@@ -311,6 +313,22 @@ def simplify_ready() -> bool:
         return ext.is_dir() and any(ext.iterdir())
     except OSError:
         return False
+
+
+def link_line(job: dict) -> str:
+    """Apply tab: where Open application will go for a job-board posting (phase 3)."""
+    try:
+        if resolver.Http.allowed(job.get("url") or "") or not job.get("url"):
+            return ""
+        r = resolver.load_results().get(job["id"]) or {}
+    except Exception:  # noqa: BLE001
+        return ""
+    if not r:
+        return "\nLink: job board only. Press Find company links (Scan & tools) to look for the company's page."
+    dup = f" Same posting as job {r['duplicate_of']}: skip one." if r.get("duplicate_of") else ""
+    return {"direct": f"\nLink: company {str(r.get('ats', '')).title()} page found ({r.get('how')}).{dup}",
+            "careers": f"\nLink: company careers site ({r.get('ats')}); you find the role there.{dup}",
+            }.get(r.get("kind"), f"\nLink: no company page found ({r.get('checked')}); apply from the job board.")
 
 
 def open_in_chrome(url: str) -> bool:
@@ -691,6 +709,8 @@ def index() -> None:
                         tool("Sync Sheet now", "sync", "sync", "Pulls your edits from the Google Sheet and pushes local changes.")
                         tool("Make track resumes", "description", "resumes", "Builds the 3 track resumes (Gmail + Gateway copies) from master_profile.json.")
                         tool("Rebuild packets", "construction", "rebuild", "Rebuilds resume and cover letter for every Packet ready job. Never submits.")
+                        tool("Find company links", "link", "resolve", "For LinkedIn/Indeed postings: finds the company's own "
+                             "application page (Workday, Greenhouse, its careers site). Reads public pages only; never LinkedIn.")
                         tool("Simplify setup", "extension", "simplify", "One time: opens the apply window so you can add Simplify and sign in. Close that window when done.")
                         nb = ui.button("Network draft", icon="group", on_click=lambda: net_dialog.open()).props("outline align=left").classes("w-full")
                         nb.tooltip("Writes LinkedIn note, email, follow-up and thank-you drafts for one person. Nothing is sent.")
@@ -762,7 +782,7 @@ def index() -> None:
                          "I submitted it (or Not yet / Skip).").classes("text-sm")
             simplify_note = ui.label("").classes("text-sm")
             apply_pick = ui.select({}, label="Application", on_change=lambda e: show_apply(e.value)).classes("w-[40rem]")
-            apply_info = ui.label("").classes("text-sm text-gray-700")
+            apply_info = ui.label("").classes("text-sm text-gray-700 whitespace-pre-wrap")
             with ui.row().classes("gap-2"):
                 b_open = ui.button("Open application", icon="launch", on_click=lambda: open_application())
                 b_open.tooltip("Opens this one application in the apply window and fills what it safely can. Only one at a time.")
@@ -1134,7 +1154,7 @@ def index() -> None:
             apply_info.text, fill_view.text = "Nothing waiting to apply. Run a scan, or Build packet on the Jobs tab.", ""
             return
         apply_info.text = (f"{job['company']} | {job['title']} | score {job['score']} | {STATUSES.get(job['status'], job['status'])}"
-                           + (f" | {job['notes']}" if job.get("notes") else ""))
+                           + (f" | {job['notes']}" if job.get("notes") else "") + link_line(job))
         fill_view.text = side_text(job, "FILL_SHEET.txt") or "The fill sheet is written when you open the application."
 
     def open_application() -> None:
@@ -1187,7 +1207,7 @@ def index() -> None:
 
     def simplify_instead() -> None:
         job = one_job(apply_pick.value)
-        if not job or not open_in_chrome(job.get("url")):
+        if not job or not open_in_chrome(resolver.target(job)[0] if job else None):   # company link when found
             ui.notify("This job has no link.", type="warning")
         else:
             ui.notify("Opened in your normal Chrome. Come back and press I submitted it when you're done.")

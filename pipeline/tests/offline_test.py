@@ -9,7 +9,8 @@ from pathlib import Path
 SRC = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parents[2]
 IP = Path(tempfile.mkdtemp(prefix="pipeline_test_")) / "InternshipPipeline"
 shutil.copytree(SRC, IP, ignore=shutil.ignore_patterns(".venv", "browser_profile", "output", ".env", "*.db", "*.log",
-                                                       "google_service_account.json", "__pycache__", ".git", "watchlist_found.yaml"))
+                                                       "google_service_account.json", "__pycache__", ".git", "watchlist_found.yaml",
+                                                       "ats_directory_found.yaml"))
 # On a machine without the private profile (e.g. a GitHub/cloud copy), run on the redacted example profile.
 if not (IP / "master_profile.json").exists() and (IP / "master_profile.example.json").exists():
     shutil.copy(IP / "master_profile.example.json", IP / "master_profile.json")
@@ -82,6 +83,7 @@ common.CONFIG["watchlist"] = [
     {"name": "Bad", "ats": "icims", "url": "x"}]
 common.CONFIG["boards_laptop"] = []
 discover.FOUND_FILE = IP / "nope.yaml"
+discover.DIRECTORY_FILES = ()   # phase 3 directory feeds are tested in phase3_checks.py
 
 check("workday_parts std", discover.workday_parts("https://a.wd5.myworkdayjobs.com/en-US/Site")[0] == "https://a.wd5.myworkdayjobs.com/wday/cxs/a/Site")
 check("workday_parts site", discover.workday_parts("https://wd1.myworkdaysite.com/recruiting/wf/WellsFargoJobs")[0] == "https://wd1.myworkdaysite.com/wday/cxs/wf/WellsFargoJobs")
@@ -396,5 +398,8 @@ exec(compile((IP / "pipeline" / "tests" / "phase1_checks.py").read_text(encoding
 
 # ---------------- phase 2: Workday filler, answer bank, Review-page check
 exec(compile((IP / "pipeline" / "tests" / "phase2_checks.py").read_text(encoding="utf-8"), "phase2_checks.py", "exec"))
+
+# ---------------- phase 3: job-board link resolver
+exec(compile((IP / "pipeline" / "tests" / "phase3_checks.py").read_text(encoding="utf-8"), "phase3_checks.py", "exec"))
 
 print("\nFAILED: " + ", ".join(fails) if fails else "\nALL PASSED")
