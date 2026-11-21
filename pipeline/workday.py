@@ -76,6 +76,7 @@ SCAN_JS = """(opt) => {
                      !!w.querySelector('[aria-required="true"]');
     if (opt.tagExp) w.setAttribute('data-pipeline-exp', '1');
     out.push({idx: n, label: label.replace(/[*✱]/g, '').trim(), kind, value: (value || '').trim(), options, required: !!required,
+              multi: !!(file && file.multiple),
               exp: w.hasAttribute('data-pipeline-exp')});
   });
   return out;
@@ -528,18 +529,35 @@ class WorkdayFiller:
         self.nap(0.6)
         return True
 
-    def upload(self, f: dict) -> bool:
+    @staticmethod
+    def _base(path: str) -> str:
+        return (path or "").split("\\")[-1].split("/")[-1]
+
+    def upload(self, f: dict, cover_field_on_page: bool = False) -> bool:
+        """Uploads what this file field is missing. Workday usually has ONE 'Resume/CV' attachments box (multiple
+        files allowed) and no cover-letter field: then the cover letter goes into that box too (Nov 21: Protiviti
+        went out without it). Returns True when the field has what it needs."""
         lab = ab.norm(f["label"])
-        path = self.files.get("cover") if re.search(r"cover", lab) else self.files.get("resume")
-        if not path:
-            return False
+        have = ab.norm(f.get("value") or "")
+        resume, cover = self.files.get("resume"), self.files.get("cover")
+        missing = lambda p: p and ab.norm(self._base(p)) not in have
+        if re.search(r"cover", lab):
+            need = [cover] if missing(cover) else []
+        else:
+            need = [resume] if not have and resume else []
+            if f.get("multi") and not cover_field_on_page and missing(cover):
+                need.append(cover)
+        if not need:
+            return bool(have) or not f["required"]
         try:
-            self.wrap(f).locator("input[type=file]").first.set_input_files(path)
-            self.page.wait_for_timeout(3000)
-            self.filled[f["label"]] = path.split("\\")[-1].split("/")[-1]
+            box = self.wrap(f).locator("input[type=file]").first
+            for path in need:                    # one at a time: Workday adds each file to the list
+                box.set_input_files(path)
+                self.page.wait_for_timeout(3000)
+            self.filled[f["label"]] = "; ".join(self._base(p) for p in need)
             return True
         except Exception:  # noqa: BLE001
-            return False
+            return bool(have)
 
     def fill_page(self, name: str):
         self.fill_experience()
@@ -547,12 +565,14 @@ class WorkdayFiller:
         if self.exp_left:
             pending += self.exp_left
             self.exp_left = []
-        for f in self.scan():
+        fields = self.scan()
+        cover_field = any(f["kind"] == "file" and re.search(r"cover", ab.norm(f["label"])) for f in fields)
+        for f in fields:
             if f.get("exp"):
                 continue        # My Experience entry fields: handled by fill_experience (never from the answer bank)
             if f["kind"] == "file":
-                if not f["value"]:
-                    self.upload(f) or (f["required"] and pending.append(self._item(f, "unknown", "upload your resume")))
+                if not self.upload(f, cover_field) and f["required"]:
+                    pending.append(self._item(f, "unknown", "upload your resume / cover letter"))
                 continue
             if f["value"]:
                 continue        # already filled (Workday's resume parser, Simplify or him): the Review check reads it

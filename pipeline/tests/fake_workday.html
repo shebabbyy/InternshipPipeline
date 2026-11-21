@@ -76,7 +76,7 @@ function render() {
       dd('country', 'Country', ['United States of America', 'Canada'], 1) + text('phone', 'Phone Number', 1) +
       dd('dtype', 'Phone Device Type', ['Landline', 'Mobile'], 1) +
       radios('prev', 'Have you previously worked for Tokio Marine HCC?', ['Yes', 'No'], 1) +
-      field('cv', 'Resume/CV', `<input type="file" id="cv">`, 1) + next;
+      field('cv', 'Resume/CV', `<input type="file" id="cv" multiple><div id="cv-list"></div>`, 1) + next;
   if (st === 'experience') { if (S.expRendered) return; S.expRendered = true;
       root.innerHTML = section('work', 'Work Experience') + section('edu', 'Education') + section('lang', 'Languages') +
       `<div role="group"><h3>Skills</h3>` + ms('skills', 'Type to Add Skills', ['Microsoft Excel', 'Microsoft Word', 'Excel VBA'], 0) + '</div>' +
@@ -127,11 +127,16 @@ document.addEventListener('click', ev => {
     const ids = [...root.querySelectorAll('input[type=text], button[aria-haspopup], textarea')].map(e => e.id);
     ids.forEach(i => S.data[i] = val(i));
     ['prev', 'spon'].forEach(n => { if (document.querySelector(`input[name=${n}]`)) S.data[n] = radio(n); });
-    if (document.getElementById('cv')) S.data.cv = document.getElementById('cv').files.length;
+    if (document.getElementById('cv')) S.data.cv = (S.cvFiles || []).length;
     if (S.step === 'experience') S.exp = collectExp();
     const order = ['myinfo', 'experience', 'questions', 'voluntary', 'review'];
     S.step = order[order.indexOf(S.step) + 1]; render(); }
   else if (t.id === 'submit') { S.submitted = true; }
+});
+document.addEventListener('change', ev => {       // like Workday: each upload is ADDED to the attachment list
+  const t = ev.target; if (t.id !== 'cv') return;
+  S.cvFiles = (S.cvFiles || []).concat([...t.files].map(f => f.name));
+  document.getElementById('cv-list').innerHTML = S.cvFiles.map(n => `<div data-automation-id="fileName">${n}</div>`).join('');
 });
 document.addEventListener('keydown', ev => {     // multiselect: type, press Enter, pick from the prompt list
   const t = ev.target; if (ev.key !== 'Enter' || !t.dataset || !t.dataset.ms) return;

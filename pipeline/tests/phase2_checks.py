@@ -145,6 +145,8 @@ try:
     from playwright.sync_api import sync_playwright as _sp
     _resume = _P(_tf.mkdtemp()) / "resume.pdf"
     _resume.write_bytes(b"%PDF-1.4 test")
+    _cover = _resume.parent / "cover.pdf"
+    _cover.write_bytes(b"%PDF-1.4 cover")
     _seen = []
     _seen_exp = []
 
@@ -169,7 +171,7 @@ try:
         _pg.goto((IP / "pipeline" / "tests" / "fake_workday.html").resolve().as_uri())
         _vault = {}
         _pwfn = lambda host, create: _vault.setdefault(host, "Pw-test-1!") if create else _vault.get(host)
-        _wf = wdm.WorkdayFiller(_pg, dict(_job, url=_pg.url), _pwfn, {"resume": str(_resume)}, _him, pace=(0.0, 0.01), wait_minutes=0.3)
+        _wf = wdm.WorkdayFiller(_pg, dict(_job, url=_pg.url), _pwfn, {"resume": str(_resume), "cover": str(_cover)}, _him, pace=(0.0, 0.01), wait_minutes=0.3)
         _out = _wf.run()
         _S = _pg.evaluate("window.S")
         _d = _S["data"]
@@ -179,7 +181,7 @@ try:
               _S["account"] == ab.account_email() and _S["pw"] == "Pw-test-1!" and _seen and "terms box" in _seen[0][0])
         check("browser phase2: My Information filled from the profile",
               _d.get("first") == _first and _d.get("city") == "Houston" and _d.get("country") == "United States of America"
-              and _d.get("dtype") == "Mobile" and _d.get("prev") == "No" and _d.get("cv") == 1
+              and _d.get("dtype") == "Mobile" and _d.get("prev") == "No" and _d.get("cv") == 2
               and _d.get("phone", "").endswith(_re.sub(r"\D", "", _P_["candidate"]["phone"])[-4:]), str(_d))
         check("browser phase2: unknown question paused, his Control Center answer filled + saved",
               _d.get("addr") == "1 Test Street" and _C("Address Line 1") == ("learned", "1 Test Street"))
@@ -202,6 +204,8 @@ try:
         check("browser phase2: My Experience: language + skills from the profile, fluent box left alone",
               [(l["lang"], l["native"]) for l in _X.get("lang", [])] == [(x["language"], False) for x in _plan["lang"]]
               and all(l["speak"] for l in _X.get("lang", [])) and _X.get("skills") == _plan["skills"], str(_X)[:600])
+        check("browser phase2: resume AND cover letter go into Workday's one Resume/CV box, once each",
+              _S.get("cvFiles") == ["resume.pdf", "cover.pdf"], str(_S.get("cvFiles")))
         check("browser phase2: questions answered from the bank; salary / essay / unknown optional left blank",
               _d.get("auth") == "Yes" and _d.get("spon") == "No" and _d.get("gpa") == _P_["education"]["gpa"]
               and _d.get("sal") == "" and _d.get("why") == "" and _d.get("rel") == "", str(_d))
