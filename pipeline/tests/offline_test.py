@@ -272,6 +272,7 @@ low2 = conn.execute("SELECT id FROM jobs WHERE status IN ('LOW','SKIPPED') LIMIT
 conn.execute("UPDATE jobs SET status='FILLED', url=?, resume=?, cover=? WHERE id=?", (base + "/signin.html", other["resume"], other["cover"], low2))
 conn.commit()
 os.environ["PIPELINE_HEADLESS"] = "1"
+common.CONFIG["account_mode"] = "assisted"   # the sign-in check below must never touch the real Windows vault
 common.CONFIG["browser_profile_dir"] = "_bp"
 seen = {}
 orig = fill.confirm_manual
