@@ -40,6 +40,7 @@ if sys.stdout is None or sys.stderr is None:
 sys.path.insert(0, str(ROOT / "pipeline"))
 from common import CONFIG, DB_PATH, LOCK_PATH, STATUSES, lock_info, pid_alive  # noqa: E402  (no Playwright here, on purpose)
 import prospects  # noqa: E402  (read-only ranking from prospects.yaml + pipeline.db)
+import answers  # noqa: E402  (phase 2: Workday questions waiting for you; answers go to an inbox file, never the DB)
 
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW (Windows): child scripts never open a console
 
@@ -771,6 +772,14 @@ def index() -> None:
                 b_not = ui.button("Not yet", on_click=lambda: ui.notify("Left as it is. It stays in the queue.")).props("flat")
                 b_skip = ui.button("Skip this job", icon="block", color="negative", on_click=lambda: apply_action("Skip", "--skip")).props("outline")
                 busy_buttons.extend([b_open, b_done, b_skip])
+            pend_card = ui.card().classes("w-full bg-yellow-50 border-2 border-yellow-500")
+            pend_card.set_visibility(False)
+            with pend_card:
+                pend_head = ui.label("").classes("text-lg font-bold text-yellow-900")
+                pend_area = ui.column().classes("w-full gap-1")
+                with ui.row().classes("gap-2"):
+                    ui.button("Continue", icon="play_arrow", on_click=lambda: pend_continue()).tooltip(
+                        "Tell the paused Workday fill to go on (e.g. after you clicked the email verification link).")
             ui.label("Fill sheet (answers ready to paste)").classes("text-lg font-semibold mt-2")
             fill_view = ui.label("").classes("whitespace-pre-wrap font-mono text-xs bg-gray-50 p-2 rounded w-full")
 
@@ -1136,6 +1145,46 @@ def index() -> None:
         run_job(f"Open application: {(one_job(jid) or {}).get('company', '')}",
                 ["pipeline/fill.py", "--job", jid, "--limit", "1"], {"PIPELINE_GUI": "1"})
 
+    pend_state = {"sig": None}
+
+    def pend_save(label: str, field) -> None:
+        val = str(field.value or "").strip()
+        if not val:
+            ui.notify("Type an answer first.", type="warning")
+            return
+        answers.queue_answer(label, val)
+        ui.notify(f"Sent to the application and saved for next time: {label}")
+
+    def pend_continue() -> None:
+        answers.queue_answer("", cont=True)
+        ui.notify("Continuing the Workday fill.")
+
+    def refresh_pending() -> None:
+        data = answers.read_pending()
+        sig = (data.get("at"), data.get("waiting")) if data else None
+        if sig == pend_state["sig"]:
+            return
+        pend_state["sig"] = sig
+        pend_card.set_visibility(bool(data))
+        pend_area.clear()
+        if not data:
+            return
+        pend_head.text = f"Paused: {data.get('company')} | {data.get('waiting')}"
+        with pend_area:
+            for it in data.get("items") or []:
+                with ui.row().classes("w-full items-center gap-2"):
+                    ui.label(it["label"]).classes("text-sm font-semibold w-[28rem]")
+                    if it["category"] in ("never", "eeo"):
+                        ui.label("Yours: do this one on the page. " + (it.get("note") or "")).classes("text-sm text-gray-700")
+                        continue
+                    if it.get("options") and it["kind"] in ("dropdown", "radio", "checkgroup"):
+                        fld = ui.select(it["options"], label="Answer").classes("w-72")
+                    else:
+                        fld = ui.input("Answer").classes("w-96") if it["kind"] != "textarea" else ui.textarea("Answer").classes("w-96")
+                    ui.button("Save + fill", on_click=(lambda lab, f: (lambda: pend_save(lab, f)))(it["label"], fld)).props("outline")
+                    if it.get("note"):
+                        ui.label(it["note"]).classes("text-xs text-gray-600")
+
     def simplify_instead() -> None:
         job = one_job(apply_pick.value)
         if not job or not open_in_chrome(job.get("url")):
@@ -1238,6 +1287,7 @@ def index() -> None:
     paint_health()
     tick()
     ui.timer(1.0, tick)
+    ui.timer(1.5, refresh_pending)   # phase 2: questions a paused Workday fill is waiting on
     ui.timer(30.0, paint_health)
     ui.timer(300.0, refresh_today)
 

@@ -21,6 +21,7 @@ from pathlib import Path
 
 from common import CONFIG, PROFILE, ROOT, ask, db, email_for, log, mark_dirty
 import apply_window as aw   # phase 1: real Chrome over CDP, URL router, click guard, Review banner
+from answers import account_email   # phase 2: portal accounts always use Gmail (Nov 20 decision)
 
 CLOSED_WORDS = ("no longer accepting applications", "no longer available", "position has been filled",
                 "job has been filled", "posting has expired", "job is no longer", "page you are looking for doesn't exist",
@@ -32,7 +33,7 @@ def fill_sheet(job: dict) -> Path:
     folder = Path(job["resume"]).parent
     lines = [
         f"FILL SHEET — {job['company']} | {job['title']}", f"Link: {job['url']}", "",
-        f"First name: {c['name'].split()[0]}", f"Last name: {c['name'].split()[-1]}", f"Email: {email_for(job)}", f"Phone: {c['phone']}",
+        f"First name: {c['name'].split()[0]}", f"Last name: {c['name'].split()[-1]}", f"Email: {email_for(job)}", f"Portal account email: {account_email()}", f"Phone: {c['phone']}",
         f"Location: {c['location']}", f"LinkedIn: {c['linkedin']}", "School: University of Houston",
         "Degree: Bachelor of Business Administration (BBA)", f"Majors: {a['majors']}",
         f"Graduation: {e['graduation']}", f"GPA: {e['gpa']}", f"Class year: {a['class_year']}",
@@ -155,7 +156,8 @@ def site_password(site: str, create: bool) -> str | None:
     if not create:
         return None
     alphabet = string.ascii_letters + string.digits
-    pw = "".join(secrets.choice(alphabet) for _ in range(14)) + "!7a"  # meets typical upper/lower/digit/symbol rules
+    # upper + lower + digit + symbol guaranteed (Workday's usual rules), the rest random
+    pw = "".join(secrets.choice(alphabet) for _ in range(14)) + secrets.choice("ABCDEFGHJKMNPQRSTUVWXYZ") + "a7!"
     keyring.set_password(KEYRING_SERVICE, site, pw)
     return pw
 
@@ -181,7 +183,7 @@ def handle_account(page, job) -> None:
     for sel in ("input[type=email]", "input[data-automation-id='email']", "input[name*='email' i]", "input[id*='email' i]"):
         boxes = _visible(page.locator(sel))
         if boxes:
-            boxes[0].fill(email_for(job))
+            boxes[0].fill(account_email())
             break
     if kind == "create":
         try_fill(page, ["input[name*='firstName' i]", "input[name*='first_name' i]"], c["name"].split()[0], ("First Name",))
@@ -202,7 +204,7 @@ def handle_account(page, job) -> None:
                 if ask("    Create the account now? [y/n]: ").lower() == "y":
                     _click_named(page, r"^\s*(create account|create an account|register|sign up)\s*$") or \
                         print("    Couldn't find one clear Create Account button; click it yourself.")
-                    print(f"    Then click the verification link sent to {email_for(job)} if one arrives.")
+                    print(f"    Then click the verification link sent to {account_email()} if one arrives.")
             else:
                 _click_named(page, r"^\s*(sign in|log in|login)\s*$") or print("    Click Sign In yourself.")
             page.wait_for_timeout(3000)
@@ -389,25 +391,42 @@ def run(limit: int = 6, job_id: str | None = None) -> int:
                 log(f"  {job['company']}: posting looks closed; skipped.")
                 page.close()
                 continue
-            try:
-                handle_account(page, job)
-            except Exception as exc:  # noqa: BLE001
-                log(f"  {job['company']}: account step skipped ({exc.__class__.__name__})")
             kind = aw.route(page.url)   # after redirects
-            n = 0
-            if kind == "greenhouse_lever":
+            use_wd = kind == "workday" and CONFIG.get("workday_autofill", True)
+            if not use_wd:   # the Workday filler handles its own sign-in / account
+                try:
+                    handle_account(page, job)
+                except Exception as exc:  # noqa: BLE001
+                    log(f"  {job['company']}: account step skipped ({exc.__class__.__name__})")
+            n, filled = 0, {}
+            if use_wd:
+                import workday   # phase 2
+                try:
+                    outcome, filled = workday.fill(page, job, site_password,
+                                                   {"resume": best_file(job["resume"]), "cover": best_file(job.get("cover"))})
+                except Exception as exc:  # noqa: BLE001
+                    outcome = f"stopped ({exc.__class__.__name__})"
+                    log(f"  {job['company']}: Workday filler stopped ({exc.__class__.__name__}); finish by hand or with Simplify.")
+                n = len(filled)
+                note = (f"Workday: filled {n} fields, stopped at Review. Check the panel, then Submit yourself."
+                        if outcome == "review" else
+                        f"Workday: filled {n} fields, then handed over ({outcome}). Finish by hand or with Simplify.")
+            elif kind == "greenhouse_lever":
                 try:
                     n = fill_greenhouse_lever(page, job)
                 except Exception as exc:  # noqa: BLE001
                     log(f"  {job['company']}: autofill skipped ({exc.__class__.__name__})")
-            note = (f"Auto-filled {n} fields. Review, answer any custom questions, then Submit." if n else
-                    f"Opened. Sign in if asked, use Simplify or 'Autofill with resume' if offered, then paste from {sheet.name}.")
-            if not n:
-                note = f"{aw.BANNERS[kind]} Answers to paste: {sheet.name}."
+            if not use_wd:
+                note = (f"Auto-filled {n} fields. Review, answer any custom questions, then Submit." if n else
+                        f"{aw.BANNERS[kind]} Answers to paste: {sheet.name}.")
             mark_dirty(conn, job["id"], status="FILLED", notes=note)
             log(f"  {job['company']}: {note}")
             aw.show_banner(page, kind)
-            watcher.add(page, job)
+            watcher.add(page, job, filled)
+            try:
+                watcher.tick()   # if the filler reached Review: screenshot + field check right away
+            except Exception:  # noqa: BLE001
+                pass
             opened.append((job, page))
         if opened:
             try:

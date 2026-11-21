@@ -96,7 +96,7 @@ max_applications_per_session: 6
 #   assisted = fills your email/name, YOU set the password with Chrome's password suggester
 #   auto     = also makes a unique password per site, stores it in Windows Credential Manager, types it,
 #              and clicks Create Account / Sign In after your y. Email verification + CAPTCHAs stay with you.
-account_mode: assisted
+account_mode: auto   # Nov 19: accounts automatic. Workday filler always uses auto; terms boxes + CAPTCHAs stay yours
 # Only used when account_mode is auto:
 #   unique  = a different generated password per site (safest)
 #   default = the one password you set with SET_DEFAULT_PASSWORD.bat (same everywhere)
@@ -125,6 +125,14 @@ browser_profile_dir: "browser_profile"   # dedicated Chrome profile; you log in 
 apply_browser: cdp
 apply_profile_dir: "apply_profile"
 cdp_port: 9222
+# ---- Workday filler (phase 2, Nov 20) ----
+# Fills Workday applications from master_profile.json + answers.yaml and stops at Review. Never submits.
+# Account: unique password per Workday site in Windows Credential Manager, email = your Gmail (all jobs).
+workday_autofill: true
+workday_start: resume        # resume = "Autofill with Resume" (Workday reads your resume), manual = "Apply Manually"
+workday_wait_minutes: 20     # how long a pause (question / terms box / CAPTCHA / verify email) waits for you
+workday_pace_s: [0.6, 1.4]   # human-paced delay between actions
+workday_daily_cap: 10        # Workday fills per day
 
 # ---- Dates shown on the Control Center's Today tab (edit freely; past dates hide themselves) ----
 events:

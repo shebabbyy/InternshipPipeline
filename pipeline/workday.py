@@ -1,0 +1,523 @@
+"""Workday filler (Control Center v2, phase 2). Deterministic: Workday's data-automation-id attributes + question
+labels, no AI. Runs inside the apply window opened by fill.py and stops at the Review page. Never submits.
+
+Flow: Apply (adventureButton) -> Autofill with Resume / Apply Manually -> sign in or create the account (unique
+password per Workday site in Windows Credential Manager, email = Gmail) -> every page: fill each field from the answer
+bank (answers.py), upload the resume, decline demographic questions -> Next -> ... -> stop at Review.
+
+Pauses (yellow banner "PAUSED", a beep, the question list in the Control Center) instead of guessing:
+  terms / consent / certify boxes, signatures, salary, criminal/background, anything unknown or essay-type, CAPTCHAs,
+  the email-verification link (unless Gmail read-only is set up), Workday validation errors.
+A pause ends when he answers in the Control Center, does it on the page, or presses Continue. Every click goes
+through apply_window.safe_click.
+"""
+from __future__ import annotations
+
+import random
+import re
+import sys
+import time
+from urllib.parse import urlparse
+
+import answers as ab
+import apply_window as aw
+import gmail_verify
+from common import CONFIG, log
+
+
+class Stop(Exception):
+    """End the automatic part; the window stays open for him."""
+
+
+SCAN_JS = """() => {
+  const vis = e => !!(e && (e.offsetParent !== null || (e.getClientRects && e.getClientRects().length)));
+  const txt = e => (e ? (e.innerText || e.textContent || '') : '').replace(/\\s+/g, ' ').trim();
+  let wraps = [...document.querySelectorAll('[data-automation-id^="formField-"], fieldset')].filter(vis)
+      .filter(w => !w.closest('#pipeline-review-panel'));
+  wraps = wraps.filter(w => !wraps.some(o => o !== w && w.contains(o)));
+  const optLabel = i => { if (i.labels && i.labels.length) return txt(i.labels[0]);
+      const p = i.closest('label'); return p ? txt(p) : (i.getAttribute('aria-label') || ''); };
+  const out = [];
+  wraps.forEach((w, n) => {
+    w.setAttribute('data-pipeline-idx', String(n));
+    let lab = w.querySelector('legend');
+    if (!lab || !txt(lab)) lab = [...w.querySelectorAll('label')].find(l => { const t = l.control;
+        return !(t && (t.type === 'radio' || t.type === 'checkbox')); }) || null;
+    let label = txt(lab);
+    const radios = [...w.querySelectorAll('input[type=radio]')];
+    const boxes = [...w.querySelectorAll('input[type=checkbox], [role=checkbox]')];
+    const dd = w.querySelector('button[aria-haspopup="listbox"]');
+    const ms = w.querySelector('[data-automation-id="multiselectInputContainer"] input, input[data-automation-id="searchBox"]');
+    const file = w.querySelector('input[type=file]');
+    const month = w.querySelector('[data-automation-id="dateSectionMonth-input"]');
+    const ta = w.querySelector('textarea');
+    const inp = w.querySelector('input:not([type=radio]):not([type=checkbox]):not([type=file]):not([type=hidden])');
+    let kind = '', value = '', options = [], ctl = null;
+    if (radios.length) { kind = 'radio'; options = radios.map(optLabel); const c = radios.find(r => r.checked); value = c ? optLabel(c) : ''; ctl = radios[0]; }
+    else if (boxes.length > 1) { kind = 'checkgroup'; options = boxes.map(optLabel);
+      value = boxes.filter(b => b.checked || b.getAttribute('aria-checked') === 'true').map(optLabel).join('; '); ctl = boxes[0]; }
+    else if (boxes.length === 1) { kind = 'checkbox'; options = [optLabel(boxes[0])];
+      value = (boxes[0].checked || boxes[0].getAttribute('aria-checked') === 'true') ? 'checked' : ''; ctl = boxes[0];
+      if (!label) label = options[0]; }
+    else if (dd) { kind = 'dropdown'; value = txt(dd); if (/^select one$/i.test(value)) value = ''; ctl = dd; }
+    else if (ms) { kind = 'multiselect'; value = [...w.querySelectorAll('[data-automation-id="selectedItem"]')].map(txt).join('; '); ctl = ms; }
+    else if (file) { kind = 'file'; value = [...w.querySelectorAll('[data-automation-id*="file-upload-item-name" i], [data-automation-id="fileName"]')].map(txt).join('; '); ctl = file; }
+    else if (month) { kind = 'date'; const y = w.querySelector('[data-automation-id="dateSectionYear-input"]');
+      value = [month.value, y ? y.value : ''].filter(Boolean).join('/'); ctl = month; }
+    else if (ta) { kind = 'textarea'; value = ta.value; ctl = ta; }
+    else if (inp) { kind = 'text'; value = inp.value; ctl = inp;
+      if (inp.readOnly || inp.disabled) kind = 'readonly'; }
+    if (!label && ctl) label = ctl.getAttribute('aria-label') || '';
+    if (!kind || kind === 'readonly' || !label) return;
+    const required = /[*✱]/.test(label) || (ctl && (ctl.getAttribute('aria-required') === 'true' || ctl.required)) ||
+                     !!w.querySelector('[aria-required="true"]');
+    out.push({idx: n, label: label.replace(/[*✱]/g, '').trim(), kind, value: (value || '').trim(), options, required: !!required});
+  });
+  return out;
+}"""
+
+STATE_JS = """() => {
+  const vis = e => !!(e && (e.offsetParent !== null || (e.getClientRects && e.getClientRects().length)));
+  const q = s => [...document.querySelectorAll(s)].filter(vis);
+  const txt = e => (e ? (e.innerText || '') : '').replace(/\\s+/g, ' ').trim();
+  const body = (document.body ? document.body.innerText : '').toLowerCase();
+  const frames = [...document.querySelectorAll('iframe')].map(f => (f.src || '') + ' ' + (f.title || '')).join(' ').toLowerCase();
+  const errs = q('[data-automation-id="errorMessage"], [data-automation-id="inputAlert"], [role=alert]').map(txt).filter(Boolean);
+  return {
+    adventure: q('[data-automation-id="adventureButton"]').length > 0,
+    start: q('[data-automation-id="applyManually"], [data-automation-id="autofillWithResume"]').length > 0,
+    email: q('input[data-automation-id="email"], input[type=email]').length > 0,
+    password: q('input[type=password]').length,
+    verify_pw: q('input[data-automation-id="verifyPassword"]').length > 0,
+    terms: q('input[data-automation-id="createAccountCheckbox"]').map(e => e.checked)[0],
+    create_link: q('[data-automation-id="createAccountLink"]').length > 0,
+    captcha: /recaptcha|hcaptcha|turnstile|arkose|funcaptcha|captcha/.test(frames) || q('[data-automation-id*="captcha" i]').length > 0,
+    verify_email: /verify your (email|account)|verification (email|link)|check your email|activate your account/.test(body),
+    errors: errs.slice(0, 6),
+    step: txt(q('[data-automation-id="progressBarActiveStep"]')[0]),
+    heading: txt(q('h2, h1')[0]),
+    path: location.pathname,
+    fields: q('[data-automation-id^="formField-"]').length,
+  };
+}"""
+
+NEXT_IDS = ("pageFooterNextButton", "bottom-navigation-next-button")
+DONE_TEXT = ("Workday: the pipeline filled what it could. Check every field (the panel on Review lists what to fix). "
+             "Only you click Submit.")
+
+
+def _beep():
+    try:
+        if sys.platform == "win32":
+            import winsound
+            winsound.MessageBeep()
+        else:
+            print("\a", end="", flush=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _month_year(text: str):
+    months = "jan feb mar apr may jun jul aug sep oct nov dec".split()
+    m = re.search(r"([A-Za-z]{3})[a-z]*\.?\s+(20\d\d)", text or "")
+    if m and m.group(1).lower() in months:
+        return f"{months.index(m.group(1).lower()) + 1:02d}", m.group(2)
+    m = re.search(r"(\d{1,2})/(20\d\d)", text or "")
+    return (f"{int(m.group(1)):02d}", m.group(2)) if m else (None, None)
+
+
+class WorkdayFiller:
+    def __init__(self, page, job: dict, password_fn, files: dict | None = None, on_pause=None,
+                 pace=None, wait_minutes: float | None = None):
+        self.page, self.job, self.password_fn = page, job, password_fn
+        self.files = files or {}                     # {"resume": path, "cover": path}
+        self.on_pause = on_pause                     # tests: simulate him during a pause
+        self.pace = pace if pace is not None else tuple(CONFIG.get("workday_pace_s", [0.6, 1.4]))
+        self.wait_s = 60 * (wait_minutes if wait_minutes is not None else CONFIG.get("workday_wait_minutes", 20))
+        self.filled: dict = {}                       # label -> value the code entered (for the Review check)
+        self.skipped: list = []                      # optional questions left blank
+        self.started = time.time()
+        self.auth_tries = 0
+        self.host = (urlparse(page.url).hostname or "").lower()
+
+    # ------------------------------------------------ small helpers
+    def nap(self, k: float = 1.0):
+        lo, hi = self.pace
+        self.page.wait_for_timeout(int(1000 * k * random.uniform(lo, hi)))
+
+    def state(self) -> dict:
+        try:
+            st = self.page.evaluate(STATE_JS)
+        except Exception:  # noqa: BLE001  (navigating)
+            self.page.wait_for_timeout(800)
+            st = self.page.evaluate(STATE_JS)
+        st["review"] = aw.is_review_page(self.page)
+        return st
+
+    def sig(self) -> str:
+        try:
+            st = self.state()
+        except Exception:  # noqa: BLE001
+            return ""
+        return "|".join(str(st.get(k)) for k in ("step", "heading", "path", "review", "password", "start", "adventure"))
+
+    def banner(self, text: str):
+        try:
+            self.page.evaluate(aw._BANNER_JS, {"text": text, "review": False})
+        except Exception:  # noqa: BLE001
+            pass
+
+    def first(self, *selectors):
+        for sel in selectors:
+            loc = self.page.locator(sel)
+            try:
+                for i in range(min(loc.count(), 4)):
+                    if loc.nth(i).is_visible():
+                        return loc.nth(i)
+            except Exception:  # noqa: BLE001
+                continue
+        return None
+
+    def click(self, loc):
+        aw.safe_click(loc, self.page)
+        self.nap()
+
+    # ------------------------------------------------ pause (he takes over one step)
+    def pause(self, reason: str, until=None, items: list | None = None, page_name: str = ""):
+        print(f"PAUSED ({self.job.get('company')}): {reason}", flush=True)
+        self.banner("PAUSED: " + reason)
+        _beep()
+        ab.write_pending(self.job, page_name, items or [], waiting=reason)
+        if self.on_pause:
+            self.on_pause(self, reason, items or [])
+        end = time.time() + self.wait_s
+        try:
+            while time.time() < end:
+                if self.page.is_closed():
+                    raise Stop("window closed")
+                got, cont = ab.take_inbox()
+                if got and items:
+                    self.apply_answers(got, items)
+                if cont:
+                    return
+                try:
+                    if until is not None and until():
+                        return
+                except Stop:
+                    raise
+                except Exception:  # noqa: BLE001
+                    pass
+                self.page.wait_for_timeout(1000)
+            raise Stop(f"waited {int(self.wait_s / 60)} min at: {reason}")
+        finally:
+            ab.clear_pending()
+
+    # ------------------------------------------------ entry
+    def run(self) -> str:
+        """'review' when it reached the Review page; otherwise a short reason it handed over."""
+        self.banner("Workday: the pipeline is filling this application. Don't click until it pauses or reaches Review.")
+        try:
+            for _ in range(25):
+                st = self.state()
+                if st["captcha"]:
+                    self.pause("CAPTCHA. Solve it yourself; the pipeline never does.", lambda: not self.state()["captcha"])
+                    continue
+                if st["review"]:
+                    return "review"
+                if st["password"]:
+                    self.auth(st)
+                    continue
+                if st["start"]:
+                    self.choose_start()
+                    continue
+                if st["adventure"]:
+                    self.click(self.first('[data-automation-id="adventureButton"]'))
+                    self.page.wait_for_timeout(2500)
+                    continue
+                if st["verify_email"] and not st["password"] and not st["fields"]:
+                    self.verify_email()
+                    continue
+                name = st["step"] or st["heading"]
+                self.fill_page(name)
+                if not self.next_page(name):
+                    return "stopped: no Next button"
+            return "stopped: too many pages"
+        except Stop as why:
+            return f"stopped: {why}"
+        except aw.GuardError as why:
+            return f"stopped: {why}"
+        finally:
+            ab.clear_pending()
+            self.banner(DONE_TEXT)
+
+    # ------------------------------------------------ start + account
+    def choose_start(self):
+        want = CONFIG.get("workday_start", "resume")
+        order = ["autofillWithResume", "applyManually"] if want == "resume" else ["applyManually", "autofillWithResume"]
+        for aid in order:
+            loc = self.first(f'[data-automation-id="{aid}"]')
+            if loc is not None:
+                self.click(loc)
+                self.page.wait_for_timeout(2500)
+                return
+        raise Stop("no Autofill / Apply Manually choice found")
+
+    def _fill_input(self, selectors, value):
+        box = self.first(*selectors)
+        if box is not None and not box.input_value():
+            box.fill(value)
+            self.nap(0.5)
+
+    def auth(self, st: dict):
+        self.auth_tries += 1
+        if self.auth_tries > 4:
+            self.pause("Sign in yourself (the pipeline tried 4 times).", lambda: not self.state()["password"])
+            return
+        create = st["verify_pw"]
+        if not create:
+            pw = self._password(create=False)
+            if not pw and st["create_link"]:
+                self.click(self.first('[data-automation-id="createAccountLink"]'))
+                return
+            if not pw:
+                self.pause("No saved password for this Workday site. Sign in yourself.", lambda: not self.state()["password"])
+                return
+        else:
+            if self._password(create=False) and self.first('[data-automation-id="signInLink"]') is not None:
+                self.click(self.first('[data-automation-id="signInLink"]'))   # account already made earlier
+                return
+            pw = self._password(create=True)
+            if not pw:
+                self.pause("Password vault unavailable. Create the account yourself.", lambda: not self.state()["password"])
+                return
+        self._fill_input(['input[data-automation-id="email"]', "input[type=email]"], ab.account_email())
+        for box in [b for b in self.page.locator("input[type=password]").all() if b.is_visible()]:
+            box.fill(pw)
+            self.nap(0.4)
+        if create and st.get("terms") is False:
+            self.pause("Tick the terms box on the Create Account form if you agree to them. The pipeline then clicks "
+                       "Create Account.", lambda: self.state().get("terms") is not False)
+        btn = self.first('[data-automation-id="createAccountSubmitButton"]' if create else '[data-automation-id="signInSubmitButton"]',
+                         '[data-automation-id="click_filter"][aria-label]')
+        if btn is None:
+            role = self.page.get_by_role("button", name=re.compile(r"^\s*(create account|sign in)\s*$", re.I))
+            btn = role.first if role.count() else None
+        if btn is None:
+            self.pause("Click Create Account / Sign In yourself.", lambda: not self.state()["password"])
+            return
+        self.click(btn)
+        self.page.wait_for_timeout(4000)
+        after = self.state()
+        if after["verify_email"]:
+            self.verify_email()
+        elif after["password"] and after["errors"]:
+            self.pause(f"Workday says: {after['errors'][0]}. Fix it yourself (Forgot password if needed).",
+                       lambda: not self.state()["password"])
+
+    def _password(self, create: bool):
+        try:
+            return self.password_fn(self.host, create)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Password vault unavailable ({exc.__class__.__name__}).", flush=True)
+            return None
+
+    def verify_email(self):
+        link = gmail_verify.find_link(self.host, self.started) if gmail_verify.enabled() else None
+        if link:
+            tab = self.page.context.new_page()
+            try:
+                tab.goto(link, timeout=60000)
+                tab.wait_for_timeout(4000)
+            finally:
+                tab.close()
+            print("Opened the Workday verification link from Gmail.", flush=True)
+            self.page.goto(self.job.get("url") or self.page.url, timeout=60000)
+            self.page.wait_for_timeout(3000)
+            return
+        self.pause(f"Workday sent a verification email to {ab.account_email()}. Click the link in that email, "
+                   "then press Continue in the Control Center (Apply tab).")
+        self.page.goto(self.job.get("url") or self.page.url, timeout=60000)
+        self.page.wait_for_timeout(3000)
+
+    # ------------------------------------------------ one page of questions
+    def scan(self) -> list[dict]:
+        return self.page.evaluate(SCAN_JS)
+
+    def wrap(self, f):
+        return self.page.locator(f'[data-pipeline-idx="{f["idx"]}"]')
+
+    def fill_field(self, f: dict, answer: str) -> bool:
+        w, kind = self.wrap(f), f["kind"]
+        try:
+            if kind in ("text", "textarea"):
+                box = w.locator("textarea" if kind == "textarea" else
+                                "input:not([type=radio]):not([type=checkbox]):not([type=file]):not([type=hidden])").first
+                box.fill(answer)
+                box.press("Tab")
+            elif kind == "dropdown":
+                self.click(w.locator('button[aria-haspopup="listbox"]').first)
+                opts = self.page.locator('[role="listbox"] [role="option"], [data-automation-id="promptOption"]')
+                opts.first.wait_for(state="visible", timeout=5000)
+                texts = [t.strip() for t in opts.all_inner_texts()]
+                choice = ab.pick_option(answer, texts)
+                if choice is None:
+                    self.page.keyboard.press("Escape")
+                    return False
+                self.click(opts.nth(texts.index(choice)))
+            elif kind in ("radio", "checkgroup"):
+                choice = ab.pick_option(answer, f["options"])
+                if choice is None:
+                    return False
+                sel = "input[type=radio]" if kind == "radio" else "input[type=checkbox], [role=checkbox]"
+                target = w.locator(sel).nth(f["options"].index(choice))
+                try:
+                    aw.safe_click(target, self.page, timeout=3000)
+                except aw.GuardError:
+                    raise
+                except Exception:  # noqa: BLE001  (Workday hides the real input under a styled circle)
+                    aw.safe_click(target, self.page, force=True)
+            elif kind == "multiselect":
+                box = w.locator('input').first
+                box.fill(answer)
+                box.press("Enter")
+                self.page.wait_for_timeout(1500)
+                opts = self.page.locator('[data-automation-id="promptOption"], [role="listbox"] [role="option"]')
+                texts = [t.strip() for t in opts.all_inner_texts()] if opts.count() else []
+                choice = ab.pick_option(answer, texts)
+                if choice is None:
+                    self.page.keyboard.press("Escape")
+                    return False
+                self.click(opts.nth(texts.index(choice)))
+            elif kind == "date":
+                mm, yy = _month_year(answer)
+                if not yy:
+                    return False
+                w.locator('[data-automation-id="dateSectionMonth-input"]').first.fill(mm)
+                year = w.locator('[data-automation-id="dateSectionYear-input"]')
+                if year.count():
+                    year.first.fill(yy)
+            else:
+                return False
+        except aw.GuardError:
+            raise
+        except Exception:  # noqa: BLE001  (unexpected widget: leave it for him)
+            return False
+        self.filled[f["label"]] = answer
+        self.nap(0.6)
+        return True
+
+    def upload(self, f: dict) -> bool:
+        lab = ab.norm(f["label"])
+        path = self.files.get("cover") if re.search(r"cover", lab) else self.files.get("resume")
+        if not path:
+            return False
+        try:
+            self.wrap(f).locator("input[type=file]").first.set_input_files(path)
+            self.page.wait_for_timeout(3000)
+            self.filled[f["label"]] = path.split("\\")[-1].split("/")[-1]
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    def fill_page(self, name: str):
+        pending = []
+        for f in self.scan():
+            if f["kind"] == "file":
+                if not f["value"]:
+                    self.upload(f) or (f["required"] and pending.append(self._item(f, "unknown", "upload your resume")))
+                continue
+            if f["value"]:
+                continue        # already filled (Workday's resume parser, Simplify or him): the Review check reads it
+            cat, ans = ab.classify(f["label"], f["kind"], self.job)
+            if cat == "eeo":
+                if not self.fill_field(f, "decline") and f["required"]:
+                    pending.append(self._item(f, cat, "pick an answer (decline if offered)"))
+            elif cat in ("seed", "learned"):
+                if not self.fill_field(f, ans) and f["required"]:
+                    pending.append(self._item(f, "unknown", f"couldn't match '{ans}' to the options"))
+            elif f["required"]:
+                note = {"never": "yours to answer on the page", "essay": "essay: draft it with /answer in Claude"}.get(cat, "")
+                pending.append(self._item(f, cat, note))
+            else:
+                self.skipped.append(f["label"])
+        if pending:
+            n = len(pending)
+            self.pause(f"{n} question{'s' if n > 1 else ''} need you on '{name}'. Answer in the Control Center "
+                       "(Apply tab) or on the page.", lambda: self._resolved(pending), pending, name)
+
+    def _item(self, f, cat, note=""):
+        return {"label": f["label"], "kind": f["kind"], "options": f.get("options") or [], "category": cat,
+                "note": note, "idx": f["idx"]}
+
+    def _resolved(self, items) -> bool:
+        now = {ab.norm(f["label"]): f["value"] for f in self.scan()}
+        return all(now.get(ab.norm(i["label"])) for i in items)
+
+    def apply_answers(self, got: dict, items: list):
+        fields = {ab.norm(f["label"]): f for f in self.scan()}
+        for label, answer in got.items():
+            f = fields.get(ab.norm(label))
+            if f and not f["value"]:
+                if self.fill_field(f, answer):
+                    print(f"  Filled '{f['label']}' with your answer (saved for next time).", flush=True)
+
+    # ------------------------------------------------ next page
+    def next_page(self, name: str) -> bool:
+        before = self.sig()
+        btn = self.first(*[f'[data-automation-id="{i}"]' for i in NEXT_IDS])
+        if btn is None:
+            role = self.page.get_by_role("button", name=re.compile(r"^\s*(next|save and continue|continue)\s*$", re.I))
+            btn = next((role.nth(i) for i in range(role.count()) if role.nth(i).is_visible()), None)
+        if btn is None:
+            return False
+        try:
+            if re.search(r"submit", btn.inner_text(timeout=2000) or "", re.I):
+                raise Stop("reached the page with the Submit button (Review). Only you click Submit")
+        except Stop:
+            raise
+        except Exception:  # noqa: BLE001
+            pass
+        self.click(btn)       # GuardError on the Review page; never reached because run() stops there first
+        end = time.time() + 15
+        while time.time() < end:
+            self.page.wait_for_timeout(700)
+            if self.sig() != before:
+                return True
+        st = self.state()
+        if st["errors"]:
+            self.pause(f"Workday shows an error on '{name}': {st['errors'][0]}. Fix it, then click Next yourself.",
+                       lambda: self.sig() != before)
+            return True
+        return self.sig() != before
+
+
+def daily_count(add: bool = False) -> int:
+    """Workday fills today (cap: workday_daily_cap, default 10)."""
+    import json
+    from datetime import date
+    from common import ROOT
+    path = ROOT / "output" / "_workday_runs.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        data = {}
+    today = date.today().isoformat()
+    n = int(data.get(today, 0)) + (1 if add else 0)
+    if add:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({today: n}), encoding="utf-8")
+    return n
+
+
+def fill(page, job: dict, password_fn, files: dict, on_pause=None) -> tuple[str, dict]:
+    """Entry point for fill.py. Returns (outcome, filled fields)."""
+    cap = int(CONFIG.get("workday_daily_cap", 10))
+    if daily_count() >= cap:
+        log(f"  {job['company']}: daily Workday cap ({cap}) reached; opened without auto-fill.")
+        return "stopped: daily cap", {}
+    daily_count(add=True)
+    wf = WorkdayFiller(page, job, password_fn, files, on_pause)
+    outcome = wf.run()
+    log(f"  {job['company']}: Workday filler {outcome}. Filled {len(wf.filled)} fields"
+        + (f"; left {len(wf.skipped)} optional blank" if wf.skipped else "") + ".")
+    return outcome, wf.filled

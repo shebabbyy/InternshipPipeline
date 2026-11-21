@@ -38,8 +38,8 @@ OTHER_ATS_HOSTS = ("icims.com", "taleo.net", "successfactors.com", "successfacto
                    "eightfold.ai", "csod.com", "dayforcehcm.com")
 
 BANNERS = {
-    "workday": "Workday. Auto-fill for Workday arrives in the next update. For now: click Simplify Autofill, "
-               "then check every field. Only you click Submit.",
+    "workday": "Workday. The pipeline fills it from your profile and stops at Review (the panel there lists what "
+               "to fix). Check every field. Only you click Submit.",
     "greenhouse_lever": "Filled from your profile. Check every field, answer any extra questions, then you click Submit.",
     "other_ats": "Click Simplify Autofill (the code never clicks it), then check every field. Only you click Submit.",
     "job_board": "Job-board link. Click the employer's Apply button; the pipeline will resolve these links "
@@ -91,7 +91,9 @@ CONSENT_TEXT = re.compile(r"\b(agree|terms|consent|certif|attest|acknowledg|acce
                           r"declare|true and (complete|correct|accurate)|electronic signature)", re.I)
 # Workday buttons the code is allowed to press even though their text says Apply (they only START an application)
 ALLOWED_AUTOMATION_IDS = {"adventureButton", "applyManually", "autofillWithResume", "useMyLastApplication",
-                          "createAccountLink", "signInLink", "utilityButtonSignIn"}
+                          "createAccountLink", "signInLink", "utilityButtonSignIn",
+                          # phase 2: these only create the Workday account / sign in (not the application)
+                          "createAccountSubmitButton", "signInSubmitButton"}
 WORKDAY_NEXT_IDS = {"bottom-navigation-next-button", "pageFooterNextButton"}
 
 _INFO_JS = """el => {
@@ -194,8 +196,8 @@ class Watcher:
     def __init__(self):
         self.tabs: dict = {}   # page -> (job, shot_taken)
 
-    def add(self, page, job):
-        self.tabs[page] = [job, False]
+    def add(self, page, job, filled=None):
+        self.tabs[page] = [job, False, filled or {}]
 
     def tick(self):
         for page, state in list(self.tabs.items()):
@@ -204,8 +206,13 @@ class Watcher:
                 continue
             review = show_banner(page, route(page.url))
             if review and not state[1]:
-                shot = review_screenshot(page, state[0])
                 state[1] = True
+                try:
+                    import review_check   # phase 2: green / yellow / red read-back of every field
+                    review_check.run(page, state[0], state[2])
+                except Exception as exc:  # noqa: BLE001
+                    print(f"Review check skipped ({exc.__class__.__name__}).", flush=True)
+                shot = review_screenshot(page, state[0])
                 if shot:
                     print(f"Review page reached for {state[0].get('company')}; screenshot {shot.name}. Only you click Submit.",
                           flush=True)

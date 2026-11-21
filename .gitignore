@@ -2,6 +2,8 @@
 .env
 google_service_account.json
 master_profile.json
+answers.yaml
+answers.tmp
 master_profile*.json
 !master_profile.example.json
 *.backup-*

@@ -1,0 +1,90 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Fake Workday (offline test)</title>
+<style>.lb{position:absolute;background:#fff;border:1px solid #999} [hidden]{display:none}</style></head>
+<body>
+<!-- A small imitation of Workday's candidate flow, built only for pipeline/tests/phase2_checks.py.
+     It uses the same data-automation-id names the filler looks for. Steps: posting -> start modal -> create account
+     -> My Information -> Application Questions -> Voluntary Disclosures -> Review. -->
+<div data-automation-id="progressBar"><span data-automation-id="progressBarActiveStep" id="step"></span></div>
+<h2 id="head"></h2>
+<div id="root"></div>
+<div id="lb" class="lb" role="listbox" hidden></div>
+<script>
+const S = {step: 'posting', data: {}, account: false, submitted: false, nextClicks: 0};
+window.S = S;
+const root = document.getElementById('root');
+const field = (id, label, inner, req) =>
+  `<div data-automation-id="formField-${id}"><label for="${id}">${label}${req ? '*' : ''}</label>${inner}</div>`;
+const text = (id, label, req, val) => field(id, label, `<input id="${id}" type="text" value="${val || ''}" ${req ? 'aria-required="true"' : ''}>`, req);
+const dd = (id, label, opts, req) => field(id, label,
+  `<button id="${id}" type="button" aria-haspopup="listbox" data-opts="${opts.join('|')}">Select One</button>`, req);
+const radios = (id, label, opts, req) => `<fieldset data-automation-id="formField-${id}"><legend><label>${label}${req ? '*' : ''}</label></legend>` +
+  opts.map((o, i) => `<input type="radio" name="${id}" id="${id}${i}" value="${o}"><label for="${id}${i}">${o}</label>`).join('') + '</fieldset>';
+const box = (id, label, req) => field(id, label, `<input type="checkbox" id="${id}" ${req ? 'aria-required="true"' : ''}>`, req);
+const next = `<button data-automation-id="pageFooterNextButton" id="next">Next</button>`;
+function render() {
+  const st = S.step;
+  document.getElementById('step').textContent = {myinfo: 'My Information', questions: 'Application Questions',
+     voluntary: 'Voluntary Disclosures', review: 'Review'}[st] || '';
+  document.getElementById('head').textContent = {posting: 'Accounting Intern', auth: 'Create Account', myinfo: 'My Information',
+     questions: 'Application Questions', voluntary: 'Voluntary Disclosures', review: 'Review'}[st] || '';
+  if (st === 'posting') root.innerHTML = `<a href="#" data-automation-id="adventureButton">Apply</a>`;
+  if (st === 'start') root.innerHTML = `<a href="#" data-automation-id="autofillWithResume">Autofill with Resume</a>
+      <a href="#" data-automation-id="applyManually">Apply Manually</a>`;
+  if (st === 'auth') root.innerHTML = `<input data-automation-id="email" type="email"><input data-automation-id="password" type="password">
+      <input data-automation-id="verifyPassword" type="password">
+      <label><input type="checkbox" data-automation-id="createAccountCheckbox" id="terms"> I agree to the Terms and Conditions</label>
+      <button data-automation-id="createAccountSubmitButton">Create Account</button>`;
+  if (st === 'myinfo') root.innerHTML = text('first', 'First Name', 1) + text('last', 'Last Name', 1) +
+      text('addr', 'Address Line 1', 1) + text('city', 'City', 1) + text('zip', 'Postal Code', 1) +
+      dd('country', 'Country', ['United States of America', 'Canada'], 1) + text('phone', 'Phone Number', 1) +
+      dd('dtype', 'Phone Device Type', ['Landline', 'Mobile'], 1) +
+      radios('prev', 'Have you previously worked for Tokio Marine HCC?', ['Yes', 'No'], 1) +
+      field('cv', 'Resume/CV', `<input type="file" id="cv">`, 1) + next;
+  if (st === 'questions') root.innerHTML =
+      dd('auth', 'Are you legally authorized to work in the United States?', ['Yes', 'No'], 1) +
+      radios('spon', 'Will you now or in the future require sponsorship?', ['Yes', 'No'], 1) +
+      text('gpa', 'What is your GPA?', 1) + text('sal', 'What are your salary expectations?', 0) +
+      field('why', 'Why do you want to work at Tokio Marine HCC?', `<textarea id="why"></textarea>`, 0) +
+      text('rel', 'Do you know anyone who works here? Name them.', 0) +
+      box('cert', 'I certify that the information provided is true and complete', 1) + next;
+  if (st === 'voluntary') root.innerHTML = dd('gender', 'Gender', ['Male', 'Female', 'I do not wish to answer'], 1) +
+      dd('vet', 'Veteran Status', ['I am a protected veteran', 'I am not a protected veteran', 'I do not wish to self-identify'], 1) +
+      box('vterms', 'I consent to the terms above', 1) + next;
+  if (st === 'review') root.innerHTML = `<div data-automation-id="applyFlowReviewPage"><h3>My Information</h3>` +
+      ['First Name|' + S.data.first, 'Phone Number|' + S.data.phone, 'City|' + S.data.city,
+       'How Did You Hear About Us?|Indeed'].map(p => { const [l, v] = p.split('|');
+        return `<div data-automation-id="formField-r${l.length}"><label>${l}</label><div>${v}</div></div>`; }).join('') +
+      `<h3>Education</h3><div data-automation-id="formField-from"><label>From</label><div>2024</div></div>
+       <h3>Application Questions</h3><div data-automation-id="formField-rgpa"><label>What is your GPA?</label><div>${S.data.gpa}</div></div>
+      <button data-automation-id="pageFooterNextButton" id="submit">Submit</button></div>`;
+}
+function val(id) { const e = document.getElementById(id); if (!e) return '';
+  if (e.type === 'checkbox') return e.checked ? 'x' : '';
+  if (e.tagName === 'BUTTON') return e.textContent === 'Select One' ? '' : e.textContent; return e.value; }
+function radio(name) { const c = document.querySelector(`input[name=${name}]:checked`); return c ? c.value : ''; }
+document.addEventListener('click', ev => {
+  const t = ev.target, aid = t.getAttribute && t.getAttribute('data-automation-id');
+  const lb = document.getElementById('lb');
+  if (aid === 'adventureButton') { ev.preventDefault(); S.step = 'start'; render(); }
+  else if (aid === 'autofillWithResume' || aid === 'applyManually') { ev.preventDefault(); S.start = aid; S.step = 'auth'; render(); }
+  else if (aid === 'createAccountSubmitButton') {
+    if (!document.getElementById('terms').checked) return;
+    S.account = document.querySelector('[data-automation-id=email]').value; S.pw = document.querySelector('[data-automation-id=password]').value;
+    S.step = 'myinfo'; render(); }
+  else if (t.getAttribute && t.getAttribute('aria-haspopup') === 'listbox') {
+    lb.innerHTML = t.dataset.opts.split('|').map(o => `<div role="option">${o}</div>`).join(''); lb.hidden = false; lb.dataset.for = t.id; }
+  else if (t.getAttribute && t.getAttribute('role') === 'option') {
+    document.getElementById(lb.dataset.for).textContent = t.textContent; lb.hidden = true; }
+  else if (t.id === 'next') {
+    S.nextClicks++;
+    const ids = [...root.querySelectorAll('input[type=text], button[aria-haspopup], textarea')].map(e => e.id);
+    ids.forEach(i => S.data[i] = val(i));
+    ['prev', 'spon'].forEach(n => { if (document.querySelector(`input[name=${n}]`)) S.data[n] = radio(n); });
+    if (document.getElementById('cv')) S.data.cv = document.getElementById('cv').files.length;
+    const order = ['myinfo', 'questions', 'voluntary', 'review'];
+    S.step = order[order.indexOf(S.step) + 1]; render(); }
+  else if (t.id === 'submit') { S.submitted = true; }
+});
+render();
+</script></body></html>

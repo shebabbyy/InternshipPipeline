@@ -393,4 +393,7 @@ check("control center: key file only checked for presence", _cc.count("google_se
 # ---------------- phase 1: apply window (router, click guard, real Chrome args, banner)
 exec(compile((IP / "pipeline" / "tests" / "phase1_checks.py").read_text(encoding="utf-8"), "phase1_checks.py", "exec"))
 
+# ---------------- phase 2: Workday filler, answer bank, Review-page check
+exec(compile((IP / "pipeline" / "tests" / "phase2_checks.py").read_text(encoding="utf-8"), "phase2_checks.py", "exec"))
+
 print("\nFAILED: " + ", ".join(fails) if fails else "\nALL PASSED")
