@@ -304,7 +304,8 @@ def side_text(job: dict | None, name: str) -> str:
 
 
 def simplify_ready() -> bool:
-    ext = ROOT / CONFIG.get("browser_profile_dir", "browser_profile") / "Default" / "Extensions" / CONFIG.get("simplify_extension_id", "")
+    prof = CONFIG.get("apply_profile_dir", "apply_profile") if CONFIG.get("apply_browser", "cdp") == "cdp" else CONFIG.get("browser_profile_dir", "browser_profile")
+    ext = ROOT / prof / "Default" / "Extensions" / CONFIG.get("simplify_extension_id", "")
     try:
         return ext.is_dir() and any(ext.iterdir())
     except OSError:

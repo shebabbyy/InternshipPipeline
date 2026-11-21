@@ -119,6 +119,12 @@ output_dir: "output"
 campus_markers: ["university of houston", "bauer", "cougarnet", "gateway", "handshake", "career fair", "campus", "on-campus", "uh rockwell"]
 simplify_extension_id: "pbanhockgagggenencehbnadejlgchfc"
 browser_profile_dir: "browser_profile"   # dedicated Chrome profile; you log in yourself
+# ---- Apply window (phase 1, Nov 20) ----
+# cdp = the pipeline starts real Chrome with its own profile (apply_profile) and attaches to it, so Simplify
+#       can be installed there once (tools\OPEN_APPLY_PROFILE.bat). playwright = the old window.
+apply_browser: cdp
+apply_profile_dir: "apply_profile"
+cdp_port: 9222
 
 # ---- Dates shown on the Control Center's Today tab (edit freely; past dates hide themselves) ----
 events:

@@ -7,6 +7,7 @@ import time
 
 from common import CONFIG, ask, require_lock
 from fill import open_browser, simplify_installed
+import apply_window as aw
 
 STORE = "https://chromewebstore.google.com/detail/pbanhockgagggenencehbnadejlgchfc"
 
@@ -37,7 +38,8 @@ if __name__ == "__main__":
     interactive = bool(sys.stdin and sys.stdin.isatty() and sys.stdout and sys.stdout.isatty())
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
-        ctx = open_browser(p)
+        sess = aw.open_session(p, False, open_browser)   # real Chrome + apply_profile: the Web Store works here
+        ctx = sess.ctx
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         if simplify_installed():
             print("Simplify is already installed in the APPLY window. Opening simplify.jobs so you can check you're signed in.")
@@ -51,10 +53,7 @@ if __name__ == "__main__":
             ask("\nPress Enter here when you're done...")
         else:
             wait_until_closed(ctx)
-        try:
-            ctx.close()
-        except Exception:  # noqa: BLE001
-            pass
+        sess.close()
     print("\n[ OK ] Simplify is installed in the APPLY window." if simplify_installed() else
           "\n[TODO] Simplify was not found in the APPLY window yet. Press Simplify setup again.")
     if interactive:

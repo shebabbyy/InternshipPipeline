@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from common import CONFIG, PROFILE, ROOT, ask, db, email_for, log, mark_dirty
+import apply_window as aw   # phase 1: real Chrome over CDP, URL router, click guard, Review banner
 
 CLOSED_WORDS = ("no longer accepting applications", "no longer available", "position has been filled",
                 "job has been filled", "posting has expired", "job is no longer", "page you are looking for doesn't exist",
@@ -163,7 +164,7 @@ def _click_named(page, pattern) -> bool:
     try:
         btns = _visible(page.get_by_role("button", name=re.compile(pattern, re.I)))
         if len(btns) == 1:
-            btns[0].click()
+            aw.safe_click(btns[0], page)   # refuses submit/consent buttons
             return True
     except Exception:  # noqa: BLE001
         pass
@@ -254,7 +255,13 @@ def approve_and_submit(conn, opened) -> None:
             if ask("    Did you submit it? [y/n]: ").lower() == "y":
                 mark_dirty(conn, job["id"], status="APPLIED", notes=f"Submitted manually {datetime.now():%Y-%m-%d %H:%M}")
             continue
-        button.click()
+        try:
+            aw.safe_click(button, page)   # always refused: only Shehab clicks Submit
+        except aw.GuardError:
+            print("    The pipeline never clicks Submit. Click Submit yourself in the tab.")
+            if ask("    Did you submit it? [y/n]: ").lower() == "y":
+                mark_dirty(conn, job["id"], status="APPLIED", notes=f"Submitted by you {datetime.now():%Y-%m-%d %H:%M}")
+            continue
         page.wait_for_timeout(6000)
         text = (page.inner_text("body") or "").lower()
         shot = shots / f"{re.sub(r'[^A-Za-z0-9]+', '', job['company'])}_{datetime.now():%Y%m%d_%H%M}.png"
@@ -288,7 +295,7 @@ def confirm_manual(conn, opened) -> None:
             mark_dirty(conn, job["id"], status="SKIPPED", notes="Skipped by you during APPLY")
 
 
-def wait_for_window_close(ctx) -> None:
+def wait_for_window_close(ctx, watcher=None, session=None) -> None:
     """Control Center mode (no keyboard): keep the window open until you close it. Statuses stay 'Filled';
     you record what you submitted with the I submitted it button. Never clicks Submit, in any submit_mode."""
     print("\n" + "=" * 60 + "\nThe application is open. NOTHING has been submitted by the script.", flush=True)
@@ -296,9 +303,16 @@ def wait_for_window_close(ctx) -> None:
           "Control Center (I submitted it / Not yet / Skip).\n" + "=" * 60, flush=True)
     started = time.time()
     while True:
+        if session is not None and not session.connected():
+            break   # real Chrome was closed
         pages = [pg for pg in ctx.pages if not pg.is_closed()]
         if not pages:
             break
+        if watcher is not None:
+            try:
+                watcher.tick()   # banners + Review-page screenshot
+            except Exception:  # noqa: BLE001
+                pass
         try:
             pages[-1].wait_for_timeout(1000)   # any open tab keeps us waiting; closing one tab is fine
         except Exception:  # noqa: BLE001  (that tab closed in the meantime; look again)
@@ -319,6 +333,8 @@ def open_browser(p, headless: bool = False):
 
 
 def simplify_installed() -> bool:
+    if CONFIG.get("apply_browser", "cdp") == "cdp":
+        return aw.simplify_installed()   # the real-Chrome apply profile (phase 1)
     ext = ROOT / CONFIG["browser_profile_dir"] / "Default" / "Extensions" / CONFIG.get("simplify_extension_id", "")
     return ext.is_dir() and any(ext.iterdir())
 
@@ -348,7 +364,9 @@ def run(limit: int = 6, job_id: str | None = None) -> int:
         return 0
     headless = bool(os.environ.get("PIPELINE_HEADLESS"))  # tests only; you always get a visible window
     with sync_playwright() as p:
-        ctx = open_browser(p, headless)
+        sess = aw.open_session(p, headless, open_browser)   # real Chrome + apply_profile (Simplify lives there)
+        ctx = sess.ctx
+        watcher = aw.Watcher()
         opened = []
         for job in ready:
             sheet = fill_sheet(job)
@@ -375,17 +393,21 @@ def run(limit: int = 6, job_id: str | None = None) -> int:
                 handle_account(page, job)
             except Exception as exc:  # noqa: BLE001
                 log(f"  {job['company']}: account step skipped ({exc.__class__.__name__})")
-            host = page.url.lower()
+            kind = aw.route(page.url)   # after redirects
             n = 0
-            if "greenhouse.io" in host or "lever.co" in host:
+            if kind == "greenhouse_lever":
                 try:
                     n = fill_greenhouse_lever(page, job)
                 except Exception as exc:  # noqa: BLE001
                     log(f"  {job['company']}: autofill skipped ({exc.__class__.__name__})")
             note = (f"Auto-filled {n} fields. Review, answer any custom questions, then Submit." if n else
                     f"Opened. Sign in if asked, use Simplify or 'Autofill with resume' if offered, then paste from {sheet.name}.")
+            if not n:
+                note = f"{aw.BANNERS[kind]} Answers to paste: {sheet.name}."
             mark_dirty(conn, job["id"], status="FILLED", notes=note)
             log(f"  {job['company']}: {note}")
+            aw.show_banner(page, kind)
+            watcher.add(page, job)
             opened.append((job, page))
         if opened:
             try:
@@ -394,15 +416,12 @@ def run(limit: int = 6, job_id: str | None = None) -> int:
                 pass
             print("If you don't see the window, look for a second Chrome icon on the taskbar.", flush=True)
         if opened and os.environ.get("PIPELINE_GUI"):
-            wait_for_window_close(ctx)        # Control Center: no keyboard, never submits
+            wait_for_window_close(ctx, watcher, sess)   # Control Center: no keyboard, never submits
         elif opened and CONFIG.get("submit_mode", "manual") == "approve":
             approve_and_submit(conn, opened)
         elif opened:
             confirm_manual(conn, opened)
-        try:
-            ctx.close()
-        except Exception:  # noqa: BLE001  (already closed by you)
-            pass
+        sess.close()   # real Chrome: only disconnects; the window stays yours
     return len(opened)
 
 

@@ -390,4 +390,7 @@ check("control center: email is only opened for you to send (compose links, no s
       "deeplink/compose" in _cc and "view" in _cc and "send_message" not in _cc and "smtplib" not in _cc)
 check("control center: key file only checked for presence", _cc.count("google_service_account.json") == _cc.count('"google_service_account.json").exists()'))
 
+# ---------------- phase 1: apply window (router, click guard, real Chrome args, banner)
+exec(compile((IP / "pipeline" / "tests" / "phase1_checks.py").read_text(encoding="utf-8"), "phase1_checks.py", "exec"))
+
 print("\nFAILED: " + ", ".join(fails) if fails else "\nALL PASSED")
