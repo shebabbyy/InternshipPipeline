@@ -121,7 +121,7 @@ simplify_extension_id: "pbanhockgagggenencehbnadejlgchfc"
 browser_profile_dir: "browser_profile"   # dedicated Chrome profile; you log in yourself
 # ---- Apply window (phase 1, Nov 20) ----
 # cdp = the pipeline starts real Chrome with its own profile (apply_profile) and attaches to it, so Simplify
-#       can be installed there once (tools\OPEN_APPLY_PROFILE.bat). playwright = the old window.
+#       can be installed there once (Control Center: Simplify setup). playwright = the old window.
 apply_browser: cdp
 apply_profile_dir: "apply_profile"
 cdp_port: 9222
