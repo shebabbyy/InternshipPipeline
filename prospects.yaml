@@ -1,0 +1,55 @@
+# Companies for cold outreach, ranked on the Control Center's Network tab (Prospects).
+# Edit freely: add a company under the right group, or delete one you don't want.
+# Companies with an open matching job in the pipeline are added automatically.
+# small: true marks local mid-size firms (they answer students more often).
+# Healthcare finance was added Nov 19, 2026 because Shehab's CVS insurance-claims and billing work matches
+# hospital revenue-cycle, AR and finance teams. Sources are the employer pages checked that day.
+
+groups:
+  corporate_energy:
+    label: "Corporate / energy finance, FP&A, treasury"
+    fit: "At CVS, where I'm a Lead Pharmacy Technician, I manage inventory and drug orders against demand and resolve billing discrepancies, and I'd like to apply that in corporate finance."
+    base: 70
+    companies: ["ExxonMobil", "Chevron", "Shell", "ConocoPhillips", "Baker Hughes", "SLB", "Halliburton", "Siemens Energy",
+                "Hilcorp", "Phillips 66", "Occidental", "EOG Resources", "Kinder Morgan", "Enterprise Products", "Energy Transfer",
+                "Albemarle", "LyondellBasell", "CenterPoint Energy", "NRG Energy", "Sysco", "Waste Management", "Quanta Services",
+                "TMEIC", "MetOx", "Kroger", "Boardwalk Pipelines", "ENGIE North America", "DESRI", "American National"]
+  banking:
+    label: "Commercial / corporate banking, credit, wealth"
+    fit: "At CVS, where I'm a Lead Pharmacy Technician, I explain pricing and coverage to customers and resolve billing disputes, and I'd like to bring that client focus to banking."
+    base: 65
+    companies: ["Citi", "JPMorgan Chase", "Bank of America", "Wells Fargo", "Truist", "Texas Capital Bank", "Amegy Bank",
+                "Frost Bank", "Prosperity Bank", "Cadence Bank", "Comerica", "Fidelity Investments", "Edward Jones", "BNY",
+                "Caldwell Companies",
+                "Crestmont Private Wealth", "Icon Wealth Partners", "Post Oak Private Wealth", "Tanglewood Total Wealth", "Legacy Trust"]
+  accounting_advisory:
+    label: "Accounting firms and Big 4 advisory"
+    fit: "At CVS, where I'm a Lead Pharmacy Technician, I resolve denied claims and billing discrepancies, and with Financial and Managerial Accounting behind me I'd like to start in accounting and advisory."
+    base: 65
+    companies: ["RSM", "BDO", "Grant Thornton", "Baker Tilly", "Crowe", "Forvis Mazars", "Deloitte", "PwC", "EY", "KPMG",
+                "Alvarez & Marsal", "FTI Consulting", "Protiviti", "Ryan"]
+    small: ["Weaver", "Whitley Penn", "Ham Langston & Brezina", "Harper Pearson", "Wouch Maloney", "Doeren Mayhew",
+            "Mauldin & Jenkins", "EisnerAmper"]
+  healthcare_finance:
+    label: "Healthcare finance and revenue cycle (matches your CVS claims work)"
+    fit: "At CVS, where I'm a Lead Pharmacy Technician, I resolve denied insurance claims, billing discrepancies and pricing disputes directly with insurance providers, and I'd like to build on that in healthcare finance."
+    base: 72
+    companies: ["MD Anderson Cancer Center", "Memorial Hermann", "Houston Methodist", "UTHealth Houston", "Tokio Marine HCC"]
+    notes:
+      "MD Anderson Cancer Center": "Student Extern - General Accounting/Finance (juniors/seniors, part-time, Texas Medical Center). careers.mdanderson.org"
+      "Memorial Hermann": "Summer Internship Program lists Accounting and Finance areas; applications expected to open Feb 2027. jobs.memorialhermann.org/summer-internship"
+      "Houston Methodist": "Summer programs for 2027: applications Dec 4, 2026 to Jan 29, 2027 (Summer Scholars administrative track). houstonmethodist.org"
+      "UTHealth Houston": "Seasonal part-time Accountant Intern (bank reconciliations, budgeting); posted 2026."
+      "Tokio Marine HCC": "Accounting Intern, Summer 2027, Houston headquarters (posted on Handshake / Cougar Pathway)."
+  ib_boutique:
+    label: "Investment banking / M&A boutiques (lower priority; hire later than big banks)"
+    fit: "At CVS, where I'm a Lead Pharmacy Technician, I resolve billing discrepancies and pricing disputes, and with Financial and Managerial Accounting behind me I'd like hands-on deal experience."
+    base: 55
+    small: ["GulfStar Group", "PPHB", "Detring Energy Advisors", "Energy & Industrial Advisory Partners", "Romanchuk & Co.",
+            "Rock Hill Capital", "Sage Road Capital", "GaP Transaction Advisors", "Tudor Pickering Holt"]
+    notes:
+      "GulfStar Group": "Emailed careers@ Jul 29, 2026: auto-reply only. Re-approach a person, new angle (Summer 2027)."
+      "PPHB": "Emailed Aug 12, 2026, no reply."
+      "Romanchuk & Co.": "Emailed Jul 29, 2026, no reply."
+      "GaP Transaction Advisors": "Emailed Jul 28, 2026 (resent), no reply."
+      "Tudor Pickering Holt": "Emailed campus recruiting Jul 28, 2026 (resent), no reply. Now Perella Weinberg."

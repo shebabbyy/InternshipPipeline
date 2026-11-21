@@ -1,0 +1,47 @@
+# Written by CHECK_WATCHLIST.bat: career-site links that were tested and work. Safe to delete; re-run to rebuild.
+watchlist:
+- name: Chevron
+  ats: workday
+  url: https://chevron.wd5.myworkdayjobs.com/jobs
+- name: ConocoPhillips
+  ats: workday
+  url: https://conocophillips.wd1.myworkdayjobs.com/External
+- name: Baker Hughes
+  ats: workday
+  url: https://bakerhughes.wd5.myworkdayjobs.com/BakerHughes
+- name: Occidental
+  ats: workday
+  url: https://oxy.wd5.myworkdayjobs.com/Corporate
+- name: Shell
+  ats: workday
+  url: https://shell.wd3.myworkdayjobs.com/ShellCareers
+- name: Sysco
+  ats: workday
+  url: https://sysco.wd5.myworkdayjobs.com/syscocareers
+- name: Citi
+  ats: workday
+  url: https://citi.wd5.myworkdayjobs.com/2
+- name: Truist
+  ats: workday
+  url: https://truist.wd1.myworkdayjobs.com/Careers
+- name: Wells Fargo
+  ats: workday
+  url: https://wd1.myworkdaysite.com/recruiting/wf/WellsFargoJobs
+- name: RSM
+  ats: workday
+  url: https://rsm.wd1.myworkdayjobs.com/RSMCareers
+- name: Crowe
+  ats: workday
+  url: https://crowe.wd12.myworkdayjobs.com/External_Careers
+- name: Baker Tilly
+  ats: workday
+  url: https://bakertilly.wd5.myworkdayjobs.com/BTCareers
+- name: Protiviti
+  ats: workday
+  url: https://roberthalf.wd1.myworkdayjobs.com/ProtivitiNA
+- name: PwC
+  ats: workday
+  url: https://pwc.wd3.myworkdayjobs.com/Global_Campus_Careers
+- name: Fidelity Investments
+  ats: workday
+  url: https://fmr.wd1.myworkdayjobs.com/FidelityCareers

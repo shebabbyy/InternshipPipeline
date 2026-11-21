@@ -1,0 +1,24 @@
+# --- Private: never leaves this laptop ---
+.env
+google_service_account.json
+master_profile.json
+master_profile*.json
+!master_profile.example.json
+*.backup-*
+pipeline.db
+pipeline.db-*
+output/
+browser_profile/
+apply_profile/
+tools/old_tracker/*.csv
+link for imm module.txt
+*.eml
+
+# --- Runtime files ---
+*.log
+pipeline.lock
+last_auto_run.txt
+last_auto_error.txt
+__pycache__/
+.pytest_cache/
+.venv/

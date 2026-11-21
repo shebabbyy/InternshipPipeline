@@ -1,0 +1,30 @@
+# Runs in GitHub's cloud every morning so new postings are found even when the laptop is closed.
+# Finds + scores jobs and writes them to the Google Sheet. No personal files live here.
+name: Morning internship scan
+on:
+  schedule:
+    - cron: "17 11 * * *"   # 11:17 UTC = 5:17 AM Houston (CST); GitHub may delay a little
+  workflow_dispatch: {}      # lets you run it by hand from the Actions tab
+permissions:
+  contents: read
+  actions: write             # only used by the keep-alive step below
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements-cloud.txt
+      - name: Find and score
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python pipeline/run_all.py --cloud
+      # GitHub switches off scheduled workflows after 60 days without repo activity. This resets that timer.
+      - name: Keep the schedule alive
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/morning_scan.yml/enable"

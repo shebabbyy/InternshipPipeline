@@ -1,0 +1,130 @@
+# ============================================================
+# Shehab Moqbel | Internship Pipeline — settings
+# Edit this file to change targets. No code changes needed.
+# ============================================================
+
+season: "Summer 2027"
+location: "Houston, TX"
+distance_miles: 50
+
+# ---- Tracks (used for scoring + resume bullet selection) ----
+tracks:
+  corporate_finance_fpa: "Energy / corporate finance, FP&A, treasury"
+  banking: "Commercial and corporate banking, credit, wealth management"
+  public_accounting: "National/mid-tier firms (RSM, BDO, Grant Thornton, Baker Tilly, Crowe) + Big 4 ADVISORY (valuation, forensics, risk, internal audit); winter/spring 2027 busy-season roles"
+# Investment banking (Nov 19): not a separate track, but IB / M&A / boutique postings are scored normally and use the corporate finance resume.
+# Big-bank Summer 2027 IB recruiting is mostly over; boutiques and middle-market firms still hire later.
+
+# ---- Job-board searches (JobSpy) ----
+searches:
+  - '"finance intern" OR "financial analyst intern" OR "FP&A intern" OR "treasury intern"'
+  - '"accounting intern" OR "audit intern" OR "tax intern" OR "assurance intern"'
+  - '"commercial banking intern" OR "corporate banking intern" OR "credit analyst intern"'
+  - '"investment banking intern" OR "investment banking summer analyst" OR "M&A intern"'
+
+# Laptop only, optional. Set boards_laptop: [] to turn job-board scraping off and rely on the
+# watchlist + your email job alerts (safest for your LinkedIn account).
+boards_laptop: ["linkedin", "indeed", "google", "zip_recruiter", "glassdoor"]
+boards_cloud: []   # jobspy Google returned nothing from cloud IPs in 2026 tests; the cloud run uses the watchlist feeds only
+hours_old: 48
+results_per_search: 30
+
+# ---- Claude-verified discovery (laptop only, uses your Pro plan) ----
+# Once a day Claude web-searches for open Summer 2027 Houston internships and OPENS each one to confirm it's live.
+# Set to 0 to turn off. Each run is one Claude session with web search: noticeably more usage than a tailoring call.
+claude_discover_per_day: 0   # OFF by default: heavy on the shared Pro budget; job alerts replace it. Set 1 to re-enable
+claude_discover_max: 15
+
+# Your target employers. Used by NETWORK.bat (alumni outreach) and FIND_COMPANY_LINKS.bat.
+target_companies: [
+  "ExxonMobil", "Chevron", "Shell", "ConocoPhillips", "Baker Hughes", "SLB", "Halliburton", "Siemens Energy", "Hilcorp",
+  "Phillips 66", "Occidental", "EOG Resources", "Kinder Morgan", "Enterprise Products", "Energy Transfer", "Albemarle",
+  "LyondellBasell", "CenterPoint Energy", "NRG Energy", "Sysco", "Waste Management", "Quanta Services", "TMEIC", "MetOx", "Kroger",
+  "Citi", "JPMorgan Chase", "Bank of America", "Wells Fargo", "Truist", "Texas Capital Bank", "Amegy Bank", "Frost Bank",
+  "Prosperity Bank", "Cadence Bank", "Comerica", "Fidelity Investments", "Edward Jones",
+  "RSM", "BDO", "Grant Thornton", "Baker Tilly", "Crowe", "Forvis Mazars", "Weaver", "Whitley Penn", "Ham Langston & Brezina",
+  "Deloitte", "PwC", "EY", "KPMG", "Alvarez & Marsal", "FTI Consulting", "Protiviti", "Harper Pearson", "Wouch Maloney"]
+
+# ---- Company watchlist (THE core source: official career-site feeds, reliable and ToS-safe) ----
+# You normally never edit this by hand:
+#   watchlist_found.yaml     14 more verified links are already in this file (Chevron, Shell, Citi, RSM, PwC...)
+#   CHECK_WATCHLIST.bat      re-tests everything plus the guesses in watchlist_candidates.yaml; keeps what works
+#   FIND_COMPANY_LINKS.bat   asks Claude for links of target companies that still have none, then tests them
+# The pipeline reads this list PLUS watchlist_found.yaml. ats: greenhouse | lever | workday
+watchlist:
+  - {name: "Texas Capital Bank", ats: workday, url: "https://texascapitalbank.wd12.myworkdayjobs.com/College_Career"}
+  # Manual examples:
+  # - {name: "Example Co", ats: greenhouse, board: "exampleco"}
+  # - {name: "Example Co", ats: lever, board: "exampleco"}
+
+# Extra whole words/phrases that mark a title as an internship (intern, internship, co-op, summer analyst are built in)
+title_keywords: ["apprentice", "summer program"]
+
+# Internship titles containing any of these (word beginnings) are ignored before scoring: they are clearly not
+# finance / accounting / business roles. Remove a word if it hides something you want.
+skip_title_words: ["engineer", "software", "developer", "data scien", "machine learning", "cyber", "information technology",
+                   "geolog", "geophys", "geoscien", "chemist", "laborator", "mechanic", "electrical", "drilling", "well servic",
+                   "petrophys", "reservoir", "hse", "nurs", "pharmac", "legal", "law clerk", "paralegal", "graphic", "ux",
+                   "architect", "technician", "welding", "mba", "phd", "ph.d", "msft", "devops", "cloud", "network admin",
+                   # added Nov 18 (audit): not finance/accounting roles
+                   "supply chain", "operations", "scheduling", "sales support", "purchasing", "project controls"]
+
+# Optional: company -> email domain, used for Hunter.io recruiter lookups (free ~25/month)
+company_domains:
+  "Texas Capital Bank": "texascapitalbank.com"
+
+# ---- How often the automatic run works (laptop) ----
+# Once a day (Nov 19 decision): the 6:40 AM task, or the first sign-in/unlock after that if the laptop was off.
+# Runs hidden and at low priority. 20 h (not 24) so a slightly earlier start the next day still counts.
+scan_every_hours: 20         # company career sites + scoring + packets + Sheet + contacts
+full_scan_every_hours: 20    # also the job boards (LinkedIn, Indeed...). Don't go below 20: it risks your LinkedIn account
+
+# ---- Scoring ----
+qualify_score: 80        # at or above -> QUALIFIED (gets tailored materials). Raised from 75 on Nov 18 (audit)
+claude_score: 90         # at or above -> Claude writes the tailoring (only true priority roles)
+max_claude_per_day: 1    # ~2-4 Claude-tailored roles a week; everything else uses your 3 track resumes
+max_active_per_company: 2  # Workday spam-flag guard
+
+# ---- Submitting ----
+# manual  = the script never clicks Submit; you do, then it asks which ones you submitted and updates the Sheet
+# approve = after you review each tab, type y and the script clicks Submit for you (screenshot saved)
+submit_mode: manual      # recommended. "approve" = script clicks Submit after your y (bot-detection + ToS risk)
+# After the automatic laptop run, open APPLY right away if packets are ready (you'll be at the laptop)
+auto_open_apply: false   # don't interrupt you when you unlock; open APPLY.bat when you choose
+max_applications_per_session: 6
+# Portal accounts (Workday etc.):
+#   assisted = fills your email/name, YOU set the password with Chrome's password suggester
+#   auto     = also makes a unique password per site, stores it in Windows Credential Manager, types it,
+#              and clicks Create Account / Sign In after your y. Email verification + CAPTCHAs stay with you.
+account_mode: assisted
+# Only used when account_mode is auto:
+#   unique  = a different generated password per site (safest)
+#   default = the one password you set with SET_DEFAULT_PASSWORD.bat (same everywhere)
+password_style: unique   # "default" (one password everywhere) is NOT recommended: one breach exposes every portal
+
+# ---- Gemini free tier (model names change; check aistudio.google.com) ----
+gemini_model: "gemini-3.1-flash-lite"
+gemini_fallback_model: "gemma-4-31b-it"
+gemini_batch_size: 25
+
+# ---- Google Sheet (your tracker) ----
+sheet_name: "Shehab Internship Tracker"
+inbox_tab: "Pipeline Inbox"
+
+# ---- Files ----
+output_dir: "output"
+# Jobs whose Company, Source or Notes contain one of these use your school email (resume, cover letter,
+# fill sheet, portal sign-in). Everything else uses your Gmail. Type "career fair" or "campus" in a row's
+# Notes in the Sheet to mark it.
+campus_markers: ["university of houston", "bauer", "cougarnet", "gateway", "handshake", "career fair", "campus", "on-campus", "uh rockwell"]
+simplify_extension_id: "pbanhockgagggenencehbnadejlgchfc"
+browser_profile_dir: "browser_profile"   # dedicated Chrome profile; you log in yourself
+
+# ---- Dates shown on the Control Center's Today tab (edit freely; past dates hide themselves) ----
+events:
+  - {date: 2026-12-04, what: "Houston Methodist 2027 summer program applications open (close Jan 29, 2027)"}
+  - {date: 2027-01-29, what: "Houston Methodist 2027 summer program applications close"}
+  - {date: 2027-01-12, what: "Albemarle/Ketjen 2027 Finance Summer Intern closes on Gateway (check it is still open)"}
+  - {date: 2027-01-14, what: "Bauer Career Launch, 2-4 pm, Melcher Hall"}
+  - {date: 2027-02-12, what: "Bauer Business Career Fair, 11 am-3 pm, UH Hilton"}
+  - {date: 2027-02-23, what: "Beta Alpha Psi spring application (last year's deadline; confirm the real date)"}

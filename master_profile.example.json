@@ -1,0 +1,303 @@
+{
+  "_README": "Single source of truth for every resume, cover letter, and form. Matches Shehab_Moqbel_Resume1.docx (Nov 11, 2026). ONLY real facts. Bullets with \"verified\": false contain estimated numbers; the pipeline will not use them until you confirm the number. Add a new bullet whenever you finish a course, certification, or project.",
+  "candidate": {
+    "name": "Shehab Moqbel",
+    "email": "test.applicant@gmail.com",
+    "email_campus": "tstudent@cougarnet.uh.edu",
+    "_email_note": "email = external applications and portal accounts. email_campus = UH / Bauer / Gateway / career-fair roles and alumni outreach (see campus_markers in config.yaml).",
+    "phone": "(000) 000-5555",
+    "location": "Houston, Texas 77066",
+    "linkedin": "https://www.linkedin.com/in/example-applicant",
+    "work_authorization": "Authorized to work in the US; no sponsorship needed",
+    "linkedin_display": "linkedin.com/in/example-applicant"
+  },
+  "education": {
+    "school": "C. T. Bauer College of Business, University of Houston",
+    "city": "Houston, Texas",
+    "degree": "Bachelor of Business Administration in Finance and Accounting",
+    "declared": "August 2026",
+    "graduation": "May 2028",
+    "class_standing": "Junior",
+    "gpa": "3.72",
+    "deans_list": [
+      "Fall 2024",
+      "Spring 2025",
+      "Spring 2026"
+    ],
+    "semester_gpas": {
+      "Fall 2024": "3.835",
+      "Spring 2025": "3.868",
+      "Spring 2026": "4.0"
+    },
+    "relevant_coursework": [
+      "Financial Accounting",
+      "Managerial Accounting",
+      "Principles of Financial Management (FINA 3332)",
+      "Accounting Frameworks (in progress)"
+    ],
+    "_coursework_note": "Only list courses completed or in progress. Add names exactly as on your transcript."
+  },
+  "experience": [
+    {
+      "id": "cvs_lead",
+      "organization": "CVS Pharmacy",
+      "location": "Houston, Texas",
+      "title": "Lead Pharmacy Technician (July 2026 – Present)",
+      "dates": "May 2024 – Present",
+      "max_bullets": 4,
+      "bullets": [
+        {
+          "text": "Resolve denied insurance claims, billing discrepancies, and pricing disputes at a high-volume retail pharmacy by working directly with insurance providers, improving prescription access and reducing claim rejections",
+          "tags": [
+            "reconciliation",
+            "billing",
+            "insurance",
+            "claims",
+            "dispute",
+            "accuracy",
+            "audit",
+            "compliance",
+            "accounts receivable",
+            "pricing"
+          ],
+          "tracks": [
+            "corporate_finance_fpa",
+            "public_accounting",
+            "banking"
+          ],
+          "verified": true
+        },
+        {
+          "text": "Oversee pharmacy operations and coordinate prescription fulfillment across the pharmacy team to meet readiness deadlines",
+          "tags": [
+            "operations",
+            "deadline",
+            "team",
+            "process",
+            "workflow",
+            "coordination",
+            "lead",
+            "oversee"
+          ],
+          "tracks": [
+            "corporate_finance_fpa",
+            "public_accounting",
+            "banking"
+          ],
+          "verified": true
+        },
+        {
+          "text": "Manage inventory and place drug orders to keep stock aligned with prescription demand",
+          "tags": [
+            "inventory",
+            "forecast",
+            "demand",
+            "purchasing",
+            "orders",
+            "supply",
+            "planning",
+            "analysis",
+            "cost"
+          ],
+          "tracks": [
+            "corporate_finance_fpa",
+            "public_accounting"
+          ],
+          "verified": true
+        },
+        {
+          "text": "Train new pharmacy technicians on prescription workflows, insurance billing, and operating procedures, preparing them to work independently",
+          "tags": [
+            "training",
+            "leadership",
+            "mentor",
+            "onboarding",
+            "procedures",
+            "team",
+            "communication"
+          ],
+          "tracks": [
+            "corporate_finance_fpa",
+            "public_accounting",
+            "banking"
+          ],
+          "verified": true
+        },
+        {
+          "text": "Explain prescription pricing and insurance coverage rules to patients in clear terms, de-escalating billing disputes while maintaining service standards",
+          "tags": [
+            "client",
+            "communication",
+            "customer",
+            "service",
+            "explain",
+            "relationship",
+            "wealth"
+          ],
+          "tracks": [
+            "banking"
+          ],
+          "verified": true,
+          "_note": "Not on the Nov 2026 resume; kept as an option for client-facing roles."
+        },
+        {
+          "text": "Resolve denied insurance claims, billing discrepancies, and pricing disputes for 25+ patients daily by working directly with insurance providers, improving prescription access and reducing claim rejections",
+          "tags": [
+            "billing",
+            "claims",
+            "dispute",
+            "volume"
+          ],
+          "tracks": [
+            "corporate_finance_fpa",
+            "public_accounting",
+            "banking"
+          ],
+          "verified": false,
+          "_note": "Resume wording with the 25+ estimate. Confirm the number, then set this to true and the plain version above to false."
+        },
+        {
+          "text": "Oversee pharmacy operations and coordinate prescription fulfillment across a team of 4, processing 100+ drive-thru transactions daily to meet readiness deadlines",
+          "tags": [
+            "operations",
+            "volume",
+            "team",
+            "deadline"
+          ],
+          "tracks": [
+            "corporate_finance_fpa",
+            "public_accounting",
+            "banking"
+          ],
+          "verified": false,
+          "_note": "Resume wording with the team-of-4 and 100+ estimates. Confirm, then set this to true and the plain version above to false."
+        }
+      ]
+    },
+    {
+      "id": "cvs_tech",
+      "organization": "CVS Pharmacy",
+      "location": "Houston, Texas",
+      "continues": true,
+      "title": "Pharmacy Technician (May 2024 – July 2026)",
+      "dates": "May 2024 – July 2026",
+      "max_bullets": 1,
+      "bullets": [
+        {
+          "text": "Met weekly vaccination targets by identifying and engaging eligible customers, supporting store-level performance goals",
+          "tags": [
+            "targets",
+            "sales",
+            "performance",
+            "metrics",
+            "goals",
+            "client"
+          ],
+          "tracks": [
+            "corporate_finance_fpa",
+            "public_accounting",
+            "banking"
+          ],
+          "verified": true
+        }
+      ]
+    }
+  ],
+  "leadership": [
+    {
+      "id": "eagle",
+      "organization": "Boy Scouts of America",
+      "location": "Houston, Texas",
+      "title": "Eagle Scout Project Leader / Assistant Senior Patrol Leader",
+      "dates": "October 2022 – June 2023",
+      "max_bullets": 3,
+      "bullets": [
+        {
+          "text": "Led a team of up to 17 volunteers to complete an Eagle Scout service project, installing two permanent metal benches at a public mosque",
+          "tags": [
+            "leadership",
+            "project",
+            "team",
+            "planning",
+            "execution",
+            "management"
+          ],
+          "tracks": [
+            "corporate_finance_fpa",
+            "public_accounting",
+            "banking"
+          ],
+          "verified": true
+        },
+        {
+          "text": "Raised and managed project funds, tracked all expenses, and allocated resources to deliver the project on schedule and within budget",
+          "tags": [
+            "budget",
+            "fundraising",
+            "expense",
+            "records",
+            "allocation",
+            "financial",
+            "bookkeeping",
+            "fp&a",
+            "accounting"
+          ],
+          "tracks": [
+            "corporate_finance_fpa",
+            "public_accounting",
+            "banking"
+          ],
+          "verified": true
+        },
+        {
+          "text": "Organized weekly troop meetings, planned activity schedules and campouts, and mentored junior scouts on teamwork and accountability",
+          "tags": [
+            "mentoring",
+            "organization",
+            "scheduling",
+            "leadership",
+            "communication"
+          ],
+          "tracks": [
+            "public_accounting",
+            "banking"
+          ],
+          "verified": true
+        }
+      ]
+    }
+  ],
+  "honors": [
+    "Dean’s List: Fall 2024, Spring 2025, Spring 2026",
+    "Eagle Scout, Boy Scouts of America"
+  ],
+  "skills": {
+    "languages": [
+      "Conversational in Arabic"
+    ],
+    "technical": [
+      "Microsoft Excel"
+    ],
+    "certifications": [],
+    "_held_not_listed": [
+      "Certified Pharmacy Technician"
+    ],
+    "_note": "Mirrors the Nov 2026 resume. Add specific Excel skills (pivot tables, XLOOKUP, modeling), BMC, MOS Excel, etc. only after completing them (see 4_Skills_Plan.md)."
+  },
+  "never_use": [
+    "SQL, Python, Power BI, Tableau, or financial modeling claims (not yet learned); Excel is listed only as 'Microsoft Excel'",
+    "CPA track / 150-hour / Aspiring CPA framing",
+    "GL coding, accounts payable, or journal entries at CVS (not part of the job)",
+    "Invented dollar amounts, percentages, or project names",
+    "Anything about Starlit HTX, AARP Tax-Aide, VITA, airline work, the toy truck essay, Hargeisa, or an accountant father (another person's background)"
+  ],
+  "standard_answers": {
+    "graduation_date": "May 2028",
+    "authorized_to_work_us": "Yes",
+    "requires_sponsorship": "No",
+    "class_year": "Junior",
+    "majors": "Finance; Accounting",
+    "gpa": "3.72",
+    "how_did_you_hear": "University career center / job board (match the actual source)"
+  }
+}

@@ -1,0 +1,10 @@
+google-genai
+gspread
+pyyaml
+requests
+python-docx
+docx2pdf
+playwright
+keyring
+nicegui>=3.19,<4
+mammoth
