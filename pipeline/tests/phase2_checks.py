@@ -123,6 +123,9 @@ _wsrc = (IP / "pipeline" / "workday.py").read_text(encoding="utf-8")
 check("phase2 static: Workday filler never ticks boxes or presses keys to submit",
       ".check(" not in _wsrc and ".set_checked(" not in _wsrc and "keyboard.press(\"Enter\")" not in _wsrc
       and "    def click(self, loc):\n        aw.safe_click(loc, self.page)" in _wsrc)
+_fsrc = (IP / "pipeline" / "fill.py").read_text(encoding="utf-8")
+check("phase2 safety: Workday auto-fill only runs in real Chrome (never the Playwright fallback window)",
+      "if use_wd and not (sess.cdp or headless):" in _fsrc)
 _gi2 = (IP / ".gitignore").read_text(encoding="utf-8") if (IP / ".gitignore").exists() else "answers.yaml"
 check("phase2 repo: answers.yaml is private (git-ignored)", "answers.yaml" in _gi2)
 

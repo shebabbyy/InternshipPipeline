@@ -393,6 +393,12 @@ def run(limit: int = 6, job_id: str | None = None) -> int:
                 continue
             kind = aw.route(page.url)   # after redirects
             use_wd = kind == "workday" and CONFIG.get("workday_autofill", True)
+            if use_wd and not (sess.cdp or headless):
+                # Nov 21: the Playwright fallback window carries automation flags (--no-sandbox, webdriver) that
+                # sites can detect. Never auto-fill Workday from it; he applies by hand there.
+                use_wd = False
+                log(f"  {job['company']}: apply window isn't your real Chrome (an old apply window was still open), "
+                    "so the Workday auto-fill is off. Close every apply-window Chrome, then press Open application again.")
             if not use_wd:   # the Workday filler handles its own sign-in / account
                 try:
                     handle_account(page, job)
