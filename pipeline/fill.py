@@ -202,7 +202,7 @@ def handle_account(page, job) -> None:
                 if ask("    Create the account now? [y/n]: ").lower() == "y":
                     _click_named(page, r"^\s*(create account|create an account|register|sign up)\s*$") or \
                         print("    Couldn't find one clear Create Account button; click it yourself.")
-                    print("    Then click the verification link in your cougarnet email if one arrives.")
+                    print(f"    Then click the verification link sent to {email_for(job)} if one arrives.")
             else:
                 _click_named(page, r"^\s*(sign in|log in|login)\s*$") or print("    Click Sign In yourself.")
             page.wait_for_timeout(3000)

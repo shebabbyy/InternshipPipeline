@@ -252,6 +252,10 @@ def run(limit: int = 10, job_id: str | None = None) -> int:
                                           (*args, limit))]
     made = 0
     for job in jobs:
+        if (not job_id and (job["score"] or 0) < CONFIG["qualify_score"]
+                and (job.get("source") or "") != "added by hand"):   # scored before the bar was raised (audit Nov 20)
+            mark_dirty(conn, job["id"], status="LOW", notes=f"Score {job['score']} is below {CONFIG['qualify_score']}; no packet built.")
+            continue
         if company_count(conn, job["company"]) >= CONFIG["max_active_per_company"]:
             mark_dirty(conn, job["id"], status="SKIPPED", notes="Company cap reached (max active applications)")
             continue

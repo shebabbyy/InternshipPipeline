@@ -63,6 +63,11 @@ check("phase1 static: apply_window has exactly one raw click, inside safe_click"
 check("phase1 static: fill.py uses the router, session and watcher",
       "aw.route(" in _fill_src and "aw.open_session(" in _fill_src and "watcher.tick()" in _fill_src)
 
+check("audit: account verification hint names the routed email, not a fixed inbox", "cougarnet email" not in _fill_src)
+_tl = (IP / "pipeline" / "tailor.py").read_text(encoding="utf-8")
+check("audit: tailoring refuses jobs below qualify_score (except hand-added / single job)",
+      'CONFIG["qualify_score"]' in _tl and '"added by hand"' in _tl)
+
 # real Chrome launch arguments
 _args = aw.chrome_args("chrome.exe", "https://x")
 check("phase1 chrome: dedicated profile + local debug port, never the default profile",
