@@ -516,6 +516,41 @@ def sent_this_week(rows: list[dict]) -> int:
     return sum(1 for r in rows if r.get("status", "").strip() in ("Sent", "Followed up", "Replied") and r.get("drafted", "") >= since)
 
 
+QUEUE_PATH = ROOT / "output" / "_outreach_queue.json"
+EVENTS_DIR = ROOT / "output" / "_outreach_events"
+SENDER_LABEL = {"school": "School Outlook", "gmail": "Gmail"}
+STATE_ORDER = {"queued": 0, "sent": 1, "replied": 2, "closed": 3, "bounced": 3, "skipped": 4}
+SOURCE_CHOICES = ["UH alum", "Bauer / UH", "Career fair", "Other"]
+
+
+def queue_rows() -> list[dict]:
+    """Phase 4 outreach queue (read-only here; only contacts.py / outreach.py write it)."""
+    try:
+        items = json.loads(QUEUE_PATH.read_text(encoding="utf-8")).get("items", [])
+    except (OSError, ValueError, AttributeError):
+        return []
+    rows = [{**i, "sender_label": SENDER_LABEL.get(i.get("sender"), i.get("sender", "")), "person": i.get("name") or "(name needed)"}
+            for i in items if isinstance(i, dict) and i.get("id")]
+    return sorted(rows, key=lambda r: (STATE_ORDER.get(r.get("state"), 9), r.get("added", "")), reverse=False)
+
+
+def queue_week() -> tuple[int, int]:
+    since = (date.today() - timedelta(days=7)).isoformat()
+    n = sum(1 for r in queue_rows() if r.get("kind") != "follow_up" and r.get("state") != "skipped" and r.get("added", "") >= since)
+    try:
+        cap = int(CONFIG.get("outreach_weekly_cap", 8))
+    except (TypeError, ValueError):
+        cap = 8
+    return n, cap
+
+
+def pending_events() -> int:
+    try:
+        return len(list(EVENTS_DIR.glob("*.json")))
+    except OSError:
+        return 0
+
+
 def prospect_rows() -> list[dict]:
     try:
         return prospects.ranked()
@@ -526,7 +561,7 @@ def prospect_rows() -> list[dict]:
 def data_signature() -> tuple:
     """Changes whenever the pipeline, the contacts or the prospect list change (the page then refreshes itself)."""
     sig = []
-    for path in (DB_PATH, CONTACTS_CACHE, ROOT / "prospects.yaml", ROOT / "output" / "outreach_log.csv"):
+    for path in (DB_PATH, CONTACTS_CACHE, ROOT / "prospects.yaml", ROOT / "output" / "outreach_log.csv", QUEUE_PATH, EVENTS_DIR):
         try:
             sig.append(path.stat().st_mtime)
         except OSError:
@@ -832,6 +867,49 @@ def index() -> None:
             ui.label("Best targets: a UH alum on the team you want (LinkedIn), or the campus recruiter. Edit the list in prospects.yaml. "
                      "Aim for about 5 a week.").classes("text-sm text-gray-600")
             ui.separator()
+            with ui.row().classes("w-full items-center gap-4"):
+                ui.label("Outreach queue: Claude drafts these, you approve").classes("text-lg font-semibold")
+                queue_label = ui.label("").classes("text-sm text-gray-600")
+                queue_sel = ui.label("").classes("text-sm text-gray-600")
+            queue_grid = ui.aggrid({
+                "columnDefs": [
+                    {"field": "state", "headerName": "State", "width": 100},
+                    {"field": "kind", "headerName": "Kind", "width": 110},
+                    {"field": "company", "headerName": "Company", "filter": True},
+                    {"field": "person", "headerName": "Person"},
+                    {"field": "title", "headerName": "Title", "flex": 1},
+                    {"field": "email", "headerName": "Email", "flex": 1},
+                    {"field": "email_status", "headerName": "Email check", "width": 120},
+                    {"field": "sender_label", "headerName": "Sends from", "width": 130},
+                ],
+                "rowData": [],
+                "defaultColDef": {"resizable": True, "sortable": True},
+            }).classes("w-full h-[16rem]")
+            queue_grid.on("cellClicked", lambda e: pick_queue((e.args or {}).get("data") or {}))
+            with ui.row().classes("gap-2"):
+                b = ui.button("Find contacts", icon="person_search", on_click=lambda: open_find()).props("color=primary")
+                b.tooltip("Hunter.io finds a recruiter or finance contact (or the email of a name you found on LinkedIn) and queues them. Nothing is sent.")
+                busy_buttons.append(b)
+                b = ui.button("Queue top 3 prospects", icon="playlist_add", on_click=lambda: run_job(
+                    "Queue prospects", ["pipeline/contacts.py", "--auto", "3"])).props("outline")
+                b.tooltip("Takes the best-ranked companies you haven't contacted and looks up one person each (3 Hunter lookups).")
+                busy_buttons.append(b)
+                b = ui.button("Add follow-ups", icon="replay", on_click=lambda: run_job(
+                    "Queue follow-ups", ["pipeline/contacts.py", "--followups"])).props("outline")
+                b.tooltip("Puts people you emailed 7+ days ago (no reply) in the queue: one follow-up each.")
+                busy_buttons.append(b)
+                b = ui.button("Sync sent emails", icon="sync_alt", on_click=lambda: run_job(
+                    "Sync sent emails", ["pipeline/outreach.py", "--fold"])).props("outline")
+                b.tooltip("Records emails sent through Claude or logged here in the Outreach tab. The daily scan does this too.")
+                busy_buttons.append(b)
+                ui.button("Log an email", icon="mark_email_read", on_click=lambda: logmail_dialog.open()).props("outline").tooltip(
+                    "You emailed someone yourself (outside Claude)? Log it so follow-ups are tracked.")
+                ui.button("Log an application", icon="assignment_turned_in", on_click=lambda: logapp_dialog.open()).props("outline").tooltip(
+                    "You applied somewhere outside the pipeline (Handshake, Gateway, a company site)? Log it.")
+                ui.button("Remove from queue", icon="delete_outline", on_click=lambda: queue_remove()).props("flat")
+            ui.label("In Claude (this project): type /outreach to draft every queued email, read them, approve the ones you like, and Claude sends "
+                     "them. Type /inbox to check for replies. Nothing is ever sent from this page.").classes("text-sm text-gray-600")
+            ui.separator()
             ui.label("Your outreach").classes("text-lg font-semibold")
             with ui.row().classes("w-full items-center gap-4"):
                 net_source = ui.label("").classes("text-sm text-gray-600")
@@ -958,6 +1036,47 @@ def index() -> None:
             ui.button("Cancel", on_click=cold_dialog.close).props("flat")
             ui.button("Make draft", on_click=lambda: do_cold()).props("color=primary")
 
+    queue_pick: dict = {}
+    with ui.dialog() as find_dialog, ui.card().classes("w-[30rem]"):
+        ui.label("Find contacts").classes("text-lg font-semibold")
+        ui.label("Company only: Hunter finds a recruiter or finance contact. Add their first and last name (from LinkedIn) to find that "
+                 "person's email. Nothing is sent.").classes("text-sm text-gray-600")
+        find_company = ui.input("Company").classes("w-full")
+        find_first = ui.input("First name (optional)").classes("w-full")
+        find_last = ui.input("Last name (optional)").classes("w-full")
+        find_source = ui.select(SOURCE_CHOICES, value="Other", label="How you know them (UH alum, Bauer and career-fair contacts send from your school email)").classes("w-full")
+        find_email = ui.input("Their email, if you already have it (skips the lookup)").classes("w-full")
+        with ui.row():
+            ui.button("Cancel", on_click=find_dialog.close).props("flat")
+            ui.button("Find and queue", on_click=lambda: do_find()).props("color=primary")
+
+    with ui.dialog() as logmail_dialog, ui.card().classes("w-[30rem]"):
+        ui.label("Log an email you sent").classes("text-lg font-semibold")
+        lm_company = ui.input("Company").classes("w-full")
+        lm_contact = ui.input("Person").classes("w-full")
+        lm_email = ui.input("Their email (optional)").classes("w-full")
+        lm_sender = ui.select({"school": "School Outlook", "gmail": "Gmail"}, value="gmail", label="Sent from").classes("w-full")
+        lm_kind = ui.select({"cold": "Cold email", "network": "Networking", "follow_up": "Follow-up", "after_apply": "After applying"},
+                            value="cold", label="Kind").classes("w-full")
+        lm_event = ui.select({"sent": "I sent it", "followed_up": "I followed up", "replied": "They replied", "closed": "Closed"},
+                             value="sent", label="What happened").classes("w-full")
+        lm_subject = ui.input("Subject (optional)").classes("w-full")
+        lm_date = ui.input("Date (YYYY-MM-DD, blank = today)").classes("w-full")
+        with ui.row():
+            ui.button("Cancel", on_click=logmail_dialog.close).props("flat")
+            ui.button("Log it", on_click=lambda: do_logmail()).props("color=primary")
+
+    with ui.dialog() as logapp_dialog, ui.card().classes("w-[30rem]"):
+        ui.label("Log an application").classes("text-lg font-semibold")
+        ui.label("For applications made outside the pipeline. It becomes an Applied job (follow-up in 7 days).").classes("text-sm text-gray-600")
+        la_company = ui.input("Company").classes("w-full")
+        la_title = ui.input("Role title").classes("w-full")
+        la_link = ui.input("Link (optional)").classes("w-full")
+        la_date = ui.input("Date applied (YYYY-MM-DD, blank = today)").classes("w-full")
+        with ui.row():
+            ui.button("Cancel", on_click=logapp_dialog.close).props("flat")
+            ui.button("Log it", on_click=lambda: do_logapp()).props("color=primary")
+
     def pick_prospect(row: dict) -> None:
         pros_pick.clear()
         pros_pick.update(row)
@@ -983,6 +1102,72 @@ def index() -> None:
         for f in (cold_first, cold_last, cold_email):
             f.value = ""
         ui.notify("Drafting. It appears under Your outreach in a moment; then use Open in Outlook.")
+
+    def _c(v, n: int) -> str:
+        return re.sub(r"[\x00-\x1f]", "", v or "").strip()[:n]
+
+    def pick_queue(row: dict) -> None:
+        queue_pick.clear()
+        queue_pick.update(row)
+        queue_sel.text = f"Selected: {row.get('company')} | {row.get('person')} ({row.get('state')})" if row else ""
+
+    def open_find() -> None:
+        find_company.value = pros_pick.get("company", "") or find_company.value
+        find_dialog.open()
+
+    def do_find() -> None:
+        company = _c(find_company.value, 80)
+        if not company:
+            ui.notify("Type a company first.", type="warning")
+            return
+        first, last, mail = _c(find_first.value, 40), _c(find_last.value, 40), _c(find_email.value, 120)
+        source = find_source.value if find_source.value in SOURCE_CHOICES else "Other"
+        if mail:   # you already have the address: no lookup, no Hunter credit
+            args = ["pipeline/contacts.py", "--add", company, f"--name={first} {last}".strip(), f"--email={mail}", f"--source={source}"]
+        else:
+            args = ["pipeline/contacts.py", f"--find={company}", f"--source={source}"] + ([f"--first={first}", f"--last={last}"] if first and last else [])
+        why = RUNNER.start(f"Find contacts: {company}", args)
+        if why:
+            ui.notify(f"Not started: {why}.", type="warning")
+            return
+        find_dialog.close()
+        for f in (find_company, find_first, find_last, find_email):
+            f.value = ""
+
+    def queue_remove() -> None:
+        if not queue_pick.get("id"):
+            ui.notify("Click a row in the queue first.", type="warning")
+            return
+        run_job(f"Remove from queue: {queue_pick.get('company', '')}", ["pipeline/contacts.py", f"--remove={queue_pick['id']}"])
+
+    def do_logmail() -> None:
+        company = _c(lm_company.value, 80)
+        if not company:
+            ui.notify("Type a company first.", type="warning")
+            return
+        why = RUNNER.start(f"Log email: {company}", ["pipeline/outreach.py", "--log-email", f"--company={company}", f"--contact={_c(lm_contact.value, 80)}",
+                                                     f"--email={_c(lm_email.value, 120)}", f"--sender={lm_sender.value}", f"--kind={lm_kind.value}",
+                                                     f"--event={lm_event.value}", f"--subject={_c(lm_subject.value, 150)}", f"--date={_c(lm_date.value, 10)}"])
+        if why:
+            ui.notify(f"Not started: {why}.", type="warning")
+            return
+        logmail_dialog.close()
+        for f in (lm_company, lm_contact, lm_email, lm_subject, lm_date):
+            f.value = ""
+
+    def do_logapp() -> None:
+        company, title = _c(la_company.value, 80), _c(la_title.value, 120)
+        if not company or not title:
+            ui.notify("Company and role title are both needed.", type="warning")
+            return
+        why = RUNNER.start(f"Log application: {company}", ["pipeline/jobctl.py", "--log-app", f"--company={company}", f"--title={title}",
+                                                           f"--link={_c(la_link.value, 300)}", f"--date={_c(la_date.value, 10)}"])
+        if why:
+            ui.notify(f"Not started: {why}.", type="warning")
+            return
+        logapp_dialog.close()
+        for f in (la_company, la_title, la_link, la_date):
+            f.value = ""
 
     def contact_compose(service: str) -> None:
         if not contact_needed():
@@ -1085,6 +1270,13 @@ def index() -> None:
         net_grid.update()
         pros_grid.options["rowData"] = prospect_rows()
         pros_grid.update()
+        qrows = queue_rows()
+        queue_grid.options["rowData"] = qrows
+        queue_grid.update()
+        n, cap = queue_week()
+        waiting = sum(1 for r in qrows if r.get("state") == "queued")
+        queue_label.text = (f"{waiting} waiting for /outreach in Claude. New people this week: {n} of {cap}."
+                            + (f" {pending_events()} sent-email record(s) waiting to sync." if pending_events() else ""))
         week_label.text = f"Sent in the last 7 days: {sent_this_week(rows)} (aim for about 5)"
         net_source.text = f"From the {info.get('source', '?')}" + (f", {info['updated'].replace('T', ' ')}" if info.get("updated") else "")
 

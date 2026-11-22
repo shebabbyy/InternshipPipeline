@@ -6,13 +6,18 @@ pulls Sheet edits first, and pushes the change to the Sheet afterwards. Nothing 
   python pipeline/jobctl.py --build ID                (re)build the resume + cover letter for one job
   python pipeline/jobctl.py --applied ID              you submitted it: Applied + today's date + follow-up in 7 days,
                                                       then outreach drafts (never sent)
+  python pipeline/jobctl.py --log-app --company C --title T [--link URL --date YYYY-MM-DD]
+                                                      an application made outside the pipeline (Handshake, Gateway,
+                                                      the company site): adds or finds the job and marks it Applied
 """
 from __future__ import annotations
 
 import argparse
+import re
 from datetime import date, timedelta
 
-from common import CONFIG, db, is_campus, load_env, log, mark_dirty, meta_set, require_lock, sync_to_sheet
+from common import (CONFIG, _dupe_key, db, is_campus, job_id, load_env, log, mark_dirty, meta_set, require_lock,
+                    sync_to_sheet, upsert_job)
 
 # Statuses a re-check may change: found or prepared, but never opened, applied, or decided by you.
 RECHECK_STATUSES = ("NEW", "QUALIFIED", "PACKET_READY", "BLOCKED")
@@ -57,6 +62,23 @@ def get(conn, jid: str) -> dict:
     return dict(row)
 
 
+def log_app(conn, company: str, title: str, link: str = "", when: str = "") -> dict:
+    """Mark an application made outside the pipeline as Applied (adds the job if it is new). Returns the job row."""
+    company, title = company.strip()[:80], title.strip()[:120]
+    if not company or not title:
+        raise SystemExit("--log-app needs --company and --title")
+    when = when if re.fullmatch(r"\d{4}-\d{2}-\d{2}", when or "") else date.today().isoformat()
+    upsert_job(conn, {"company": company, "title": title, "url": link.strip()[:300], "source": "added by hand"})
+    key = _dupe_key(company, title)
+    row = next((dict(r) for r in conn.execute("SELECT * FROM jobs") if _dupe_key(r["company"], r["title"]) == key), None)
+    if row is None:
+        row = get(conn, job_id(company, title))
+    mark_dirty(conn, row["id"], status="APPLIED", notes=f"Logged by you {date.today():%Y-%m-%d}: applied {when}.")
+    meta_set(conn, f"applied_{row['id']}", when)
+    log(f"Logged application: {row['company']} | {row['title']} (applied {when})")
+    return row
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--recheck", action="store_true")
@@ -64,6 +86,11 @@ def main() -> None:
     ap.add_argument("--skip")
     ap.add_argument("--build")
     ap.add_argument("--applied")
+    ap.add_argument("--log-app", action="store_true")
+    ap.add_argument("--company", default="")
+    ap.add_argument("--title", default="")
+    ap.add_argument("--link", default="")
+    ap.add_argument("--date", default="")
     a = ap.parse_args()
     load_env()
     if not a.dry_run:
@@ -86,6 +113,8 @@ def main() -> None:
             raise SystemExit("Already applied; not rebuilding.")
         mark_dirty(conn, job["id"], status="QUALIFIED")
         tailor.run(limit=1, job_id=job["id"])
+    elif a.log_app:
+        log_app(conn, a.company, a.title, a.link, a.date)
     elif a.applied:
         import outreach
         job = get(conn, a.applied)

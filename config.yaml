@@ -73,6 +73,14 @@ skip_title_words: ["engineer", "software", "developer", "data scien", "machine l
 company_domains:
   "Texas Capital Bank": "texascapitalbank.com"
 
+# ---- Outreach queue (phase 4, Nov 22) ----
+# The pipeline finds people and fills output\_outreach_queue.json; Claude (/outreach in the project) drafts, you approve, Claude sends.
+outreach_weekly_cap: 8          # new people queued per 7 days (your target is 5 to 10)
+outreach_per_company: 2         # at most this many people at one company
+outreach_company_gap_days: 21   # no new person at a company within this many days of the last email there
+outreach_skip: []               # companies never to contact, e.g. ["Some Company"]
+hunter_monthly_cap: 20          # Hunter.io lookups per month (free plan = 25 searches; each lookup counts 1)
+
 # ---- How often the automatic run works (laptop) ----
 # Once a day (Nov 19 decision): the 6:40 AM task, or the first sign-in/unlock after that if the laptop was off.
 # Runs hidden and at low priority. 20 h (not 24) so a slightly earlier start the next day still counts.

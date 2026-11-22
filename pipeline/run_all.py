@@ -114,6 +114,7 @@ def main():
     # Laptop-only parts are loaded here so the cloud scan needs neither your profile nor the document tools.
     import claude_discover
     import fill
+    import contacts   # phase 4
     import outreach
     import resolver   # phase 3: job-board links -> the company's own application page
     import tailor
@@ -137,6 +138,8 @@ def main():
         else:
             stamp_applied(conn)
             stage("Outreach drafts", outreach.run)
+            stage("Sent emails", outreach.fold_events)
+            stage("Outreach queue", contacts.refresh_followups)
         sync_to_sheet(conn)
         print(summary(conn))
         return
@@ -188,7 +191,9 @@ def main():
     stamp_applied(conn)
     stage("Outreach drafts", outreach.run)  # for anything you marked Applied in the Sheet
     sync_to_sheet(conn)
+    stage("Sent emails", outreach.fold_events)  # phase 4: emails sent through Claude's /outreach or logged by hand
     stage("Contacts", outreach.export_contacts)  # keeps the Control Center's Network tab current
+    stage("Outreach queue", contacts.refresh_followups)  # phase 4: due follow-ups (one per person); no lookups, no credits
     print(summary(conn))
     ready = conn.execute("SELECT COUNT(*) FROM jobs WHERE status='PACKET_READY'").fetchone()[0]
     if args.auto and ready and CONFIG.get("auto_open_apply"):

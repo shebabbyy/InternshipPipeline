@@ -402,4 +402,7 @@ exec(compile((IP / "pipeline" / "tests" / "phase2_checks.py").read_text(encoding
 # ---------------- phase 3: job-board link resolver
 exec(compile((IP / "pipeline" / "tests" / "phase3_checks.py").read_text(encoding="utf-8"), "phase3_checks.py", "exec"))
 
+# ---------------- phase 4: outreach queue, Hunter lookup, sender tags, sent-email events
+exec(compile((IP / "pipeline" / "tests" / "phase4_checks.py").read_text(encoding="utf-8"), "phase4_checks.py", "exec"))
+
 print("\nFAILED: " + ", ".join(fails) if fails else "\nALL PASSED")

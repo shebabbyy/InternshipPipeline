@@ -3,6 +3,8 @@
   python pipeline/outreach.py              drafts for every application marked Applied (run by APPLY.bat)
   python pipeline/outreach.py --network    NETWORK.bat: drafts for a person at a company you have NOT applied to
   python pipeline/outreach.py --due        list follow-ups that are due
+  python pipeline/outreach.py --fold       phase 4: record emails sent through Claude (/outreach) or logged by hand
+  python pipeline/outreach.py --log-email --company C --contact "Name" [--email --sender gmail|school --subject S]
 
 Each contact gets a small folder with:
   1_LINKEDIN_NOTE.txt   connection note, under LinkedIn's 300-character limit
@@ -161,9 +163,7 @@ def write_cold_kit(folder: Path, company: str, first_name: str, to: str) -> Path
 
 
 # ---------------------------------------------------------------- tracking
-def log_outreach(company: str, contact: str, kind: str, folder: Path) -> None:
-    row = [date.today().isoformat(), company, contact or "(pick a UH alum)", kind, "Drafted",
-           (date.today() + timedelta(days=7)).isoformat(), alumni_link(company), str(folder), ""]
+def _append_row(row: list[str]) -> None:
     path = ROOT / CONFIG["output_dir"] / "outreach_log.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     fresh = not path.exists()
@@ -178,6 +178,18 @@ def log_outreach(company: str, contact: str, kind: str, folder: Path) -> None:
             worksheet(sh, OUTREACH_TAB, OUTREACH_HEADER).append_row(row, value_input_option="RAW", table_range="A1")
     except Exception as exc:  # noqa: BLE001
         log(f"  Outreach tab not updated ({exc.__class__.__name__}); it is still in outreach_log.csv.")
+
+
+def log_outreach(company: str, contact: str, kind: str, folder: Path) -> None:
+    _append_row([date.today().isoformat(), company, contact or "(pick a UH alum)", kind, "Drafted",
+                 (date.today() + timedelta(days=7)).isoformat(), alumni_link(company), str(folder), ""])
+
+
+def log_sent(company: str, contact: str, kind: str, key: str, status: str = "Sent", when: str = "", notes: str = "") -> None:
+    """A row for an email that was sent outside the draft kits (through Claude's /outreach, or by hand)."""
+    when = when if re.fullmatch(r"\d{4}-\d{2}-\d{2}", when or "") else date.today().isoformat()
+    follow = (date.fromisoformat(when) + timedelta(days=7)).isoformat() if status == "Sent" else ""
+    _append_row([when, company, contact or "(name?)", kind, status, follow, alumni_link(company), key, notes])
 
 
 def due_followups() -> list[str]:
@@ -234,10 +246,10 @@ STATUS_CHOICES = ("Sent", "Followed up", "Replied", "Closed")
 
 
 def mark_sent(folder: str, status: str = "Sent") -> bool:
-    """Sent / Followed up: next touch in 7 days. Replied / Closed: no more follow-up reminders.
-    Matched by the drafts folder (unique)."""
+    """Sent: next touch in 7 days. Followed up / Replied / Closed: no more reminders (one follow-up per person, Nov 19).
+    Matched by the drafts folder or queue key (unique)."""
     status = status if status in STATUS_CHOICES else "Sent"
-    follow = (date.today() + timedelta(days=7)).isoformat() if status in ("Sent", "Followed up") else ""
+    follow = (date.today() + timedelta(days=7)).isoformat() if status == "Sent" else ""
     done = False
     try:
         sh = spreadsheet()
@@ -253,6 +265,69 @@ def mark_sent(folder: str, status: str = "Sent") -> bool:
     log((f"Marked {status}" + (f", follow up on {follow}." if follow else ".")) if done else
         "That contact was not found in the Outreach tab; nothing changed.")
     return done
+
+
+# ---------------------------------------------------------------- sent-email events (phase 4)
+EVENT_STATUS = {"sent": "Sent", "followed_up": "Followed up", "replied": "Replied", "closed": "Closed", "bounced": "Closed"}
+ITEM_STATE = {"sent": "sent", "followed_up": "sent", "replied": "replied", "closed": "closed", "bounced": "bounced", "skipped": "skipped"}
+KIND_LABEL = {"cold": "Cold email", "network": "Networking", "follow_up": "Follow-up", "after_apply": "After applying"}
+
+
+def add_event(event: str, company: str, contact: str = "", email: str = "", item: str = "", sender: str = "", subject: str = "",
+              kind: str = "cold", note: str = "", when: str = "") -> Path:
+    """Write one event file. Claude does this after YOU approved and sent an email (or when a reply arrived); the
+    Control Center's Log an email does it for emails you sent yourself. Folded into the Outreach tab by fold_events()."""
+    import contacts
+    contacts.EVENTS_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    path = contacts.EVENTS_DIR / f"{stamp}_{event}.json"
+    path.write_text(json.dumps({"event": event, "company": company, "contact": contact, "email": email, "item": item,
+                                "sender": sender, "subject": subject, "kind": kind, "note": note,
+                                "date": when or date.today().isoformat()}, indent=1), encoding="utf-8")
+    return path
+
+
+def fold_events() -> int:
+    """Record sent / replied events in the Outreach tab and the queue. Event files move to _outreach_events/done/."""
+    import contacts
+    files = sorted(contacts.EVENTS_DIR.glob("*.json")) if contacts.EVENTS_DIR.exists() else []
+    n = 0
+    for f in files:
+        try:
+            e = json.loads(f.read_text(encoding="utf-8"))
+            status = EVENT_STATUS[e["event"]]
+        except (OSError, ValueError, KeyError):
+            log(f"  Skipped unreadable event file {f.name}.")
+            f.rename(f.with_suffix(".bad"))
+            continue
+        data = contacts.load_queue()
+        item = next((i for i in data["items"] if i["id"] == e.get("item")), None) or next(
+            (i for i in data["items"] if e.get("email") and i.get("email", "").lower() == e["email"].lower()
+             and i["kind"] != "follow_up"), None)
+        key = (item or {}).get("followup_of") or (item or {}).get("folder") or (f"queue:{item['id']}" if item else
+              f"event:{contacts.slug(e.get('company', ''))}:{contacts.slug(e.get('contact', '') or e.get('email', ''))}")
+        company = e.get("company") or (item or {}).get("company", "")
+        contact = e.get("contact") or (item or {}).get("name", "")
+        if not mark_sent(key, status):   # no row for this person yet: add one
+            log_sent(company, contact, KIND_LABEL.get(e.get("kind"), "Cold email"), key, status, e.get("date", ""),
+                     f"From {e.get('sender') or (item or {}).get('sender', '?')}: {e.get('subject', '')}"[:200])
+        if item:
+            fields = {"sent": e.get("date", "")} if e["event"] in ("sent", "followed_up") else {}
+            if e.get("subject") and e["event"] in ("sent", "followed_up"):
+                fields["subject"] = e["subject"]
+            contacts.set_state(item["id"], ITEM_STATE[e["event"]], **fields)
+            if e["event"] in ("replied", "closed", "bounced"):   # no follow-up for someone who answered
+                for i in contacts.load_queue()["items"]:
+                    if i["kind"] == "follow_up" and i.get("followup_of") == key and i["state"] == "queued":
+                        contacts.set_state(i["id"], "skipped")
+        done = contacts.EVENTS_DIR / "done"
+        done.mkdir(exist_ok=True)
+        f.rename(done / f.name)
+        n += 1
+    if n:
+        log(f"Sent emails: {n} event(s) recorded.")
+        export_contacts()
+    return n
 
 
 # ---------------------------------------------------------------- modes
@@ -346,8 +421,27 @@ if __name__ == "__main__":
     ap.add_argument("--sent", help="drafts folder of the contact you just messaged")
     ap.add_argument("--status", default="Sent", help="with --sent: Sent | Followed up | Replied | Closed")
     ap.add_argument("--cold", action="store_true", help="with --company: cold internship email instead of a networking note")
+    ap.add_argument("--fold", action="store_true", help="record sent/replied events (output/_outreach_events) in the Outreach tab")
+    ap.add_argument("--log-email", action="store_true", help="log an email you sent yourself (needs --company, --contact)")
+    ap.add_argument("--subject", default="")
+    ap.add_argument("--sender", default="gmail", help="with --log-email: gmail | school")
+    ap.add_argument("--kind", default="cold", help="with --log-email: cold | network | follow_up | after_apply")
+    ap.add_argument("--event", default="sent", help="with --log-email: sent | followed_up | replied | closed | bounced")
+    ap.add_argument("--contact", default="")
+    ap.add_argument("--date", default="")
     args = ap.parse_args()
     load_env()
+    if args.fold or args.log_email:
+        from common import require_lock
+        require_lock("sent emails")
+        if args.log_email:
+            if not args.company:
+                raise SystemExit("--log-email needs --company")
+            add_event(args.event if args.event in EVENT_STATUS else "sent", args.company.strip()[:80], args.contact.strip()[:80],
+                      args.email.strip()[:120], "", args.sender.strip()[:10], args.subject.strip()[:150], args.kind.strip()[:20],
+                      "logged by hand", args.date.strip()[:10])
+        fold_events()
+        raise SystemExit(0)
     if args.export:
         export_contacts()
         raise SystemExit(0)
