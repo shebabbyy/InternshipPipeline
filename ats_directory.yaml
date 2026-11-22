@@ -12,7 +12,7 @@
 #   aliases:  other spellings of the company name on job boards
 companies:
   - {name: "American National", aliases: ["American National Insurance", "American National Insurance Company"],
-     ats: greenhouse, board: americannational, watch: true}
+     ats: successfactors, search: "https://jobs.americannational.com/search/?q={q}"}   # Greenhouse board gone (404, Nov 22)
   - {name: "Pilot Company", aliases: ["Pilot Flying J", "Pilot Travel Centers"], ats: smartrecruiters, board: PilotCompany,
      watch: true, careers: "https://careers.pilotcompany.com/"}
   - {name: "Quanta Services", ats: icims, search: "https://careers-quanta.icims.com/jobs/search?ss=1&searchKeyword={q}"}

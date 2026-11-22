@@ -69,7 +69,8 @@ def _post(url, **k):
 _http = resolver.Http(_get, _post, delay=0)
 resolver.FOUND_FILE = IP / "_test_ats_found.yaml"
 resolver.RESOLVED_FILE = IP / "output" / "_resolved_links_test.json"
-_entries = resolver._load(resolver.DIRECTORY_FILE) + [
+_entries = [e for e in resolver._load(resolver.DIRECTORY_FILE) if e.get("name") != "American National"] + [
+    {"name": "American National", "aliases": ["American National Insurance Company"], "ats": "greenhouse", "board": "americannational"},
     {"name": "WD Co", "ats": "workday", "url": "https://wdco.wd1.myworkdayjobs.com/en-US/Careers", "via": "watchlist"},
     {"name": "Example Energy", "ats": "other", "careers": "https://careers.example-energy.com/jobs"}]
 LI = "https://www.linkedin.com/jobs/view/"
@@ -150,7 +151,7 @@ _disc.DIRECTORY_FILES = (IP / "ats_directory.yaml",)
 _we = _disc.watchlist_entries()
 _disc.DIRECTORY_FILES = _old_files
 check("phase3 discovery: directory feeds with watch: true are scanned daily",
-      any(e.get("board") == "americannational" for e in _we) and any(e.get("board") == "PilotCompany" for e in _we)
+      any(e.get("board") == "PilotCompany" for e in _we)
       and not any(e.get("name") == "Quanta Services" for e in _we))
 
 # ---------- wiring (static)
