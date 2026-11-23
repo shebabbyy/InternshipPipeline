@@ -72,6 +72,8 @@ SCAN_JS = """(opt) => {
       if (inp.readOnly || inp.disabled) kind = 'readonly'; }
     if (!label && ctl) label = ctl.getAttribute('aria-label') || '';
     if (!kind || kind === 'readonly' || !label) return;
+    if (/beecatcher|honeypot/i.test((ctl && (ctl.getAttribute('data-automation-id') || ctl.id || ctl.name)) || '') ||
+        /for robots only|do not enter if you('| a)re human|leave (this )?(field )?blank/i.test(label)) return;   // bot trap
     const required = /[*✱]/.test(label) || (ctl && (ctl.getAttribute('aria-required') === 'true' || ctl.required)) ||
                      !!w.querySelector('[aria-required="true"]');
     if (opt.tagExp) w.setAttribute('data-pipeline-exp', '1');
@@ -107,7 +109,9 @@ STATE_JS = """() => {
     verify_pw: q('input[data-automation-id="verifyPassword"]').length > 0,
     terms: q('input[data-automation-id="createAccountCheckbox"]').map(e => e.checked)[0],
     create_link: q('[data-automation-id="createAccountLink"]').length > 0,
-    captcha: frames || q('[data-automation-id*="captcha" i]').some(e => e.getBoundingClientRect().height > 20),
+    // Workday's 'noCaptchaWrapper' sits empty on every sign-in form; it only counts once a challenge shows inside it.
+    captcha: frames || q('[data-automation-id*="captcha" i]').some(e => [...e.querySelectorAll('iframe, img, canvas')]
+                .some(x => shown(x) && x.getBoundingClientRect().height > 30)),
     verify_email: /verify your (email|account)|verification (email|link)|check your email|activate your account/.test(body),
     errors: errs.slice(0, 6),
     step: txt(q('[data-automation-id="progressBarActiveStep"]')[0]),

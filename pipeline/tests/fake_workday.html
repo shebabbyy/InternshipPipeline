@@ -78,6 +78,8 @@ function render() {
       <button data-automation-id="GoogleSignInButton">Sign in with Google</button>
       <button data-automation-id="SignInWithEmailButton">Sign in with email</button>`;
   if (st === 'signin') root.innerHTML = `<input data-automation-id="email" type="email"><input data-automation-id="password" type="password">
+      <div data-automation-id="noCaptchaWrapper" style="height:40px;width:376px"></div>
+      <div data-automation-id="formField-beecatcher"><label for="bee">Enter website. This input is for robots only, do not enter if you're human.</label><input id="bee" data-automation-id="beecatcher" type="text"></div>
       <button data-automation-id="signInSubmitButton">Sign In</button>
       <button data-automation-id="createAccountLink">Create Account</button>`;
   if (st === 'autofill') root.innerHTML = `<div data-automation-id="file-upload-drop-zone">
@@ -129,11 +131,12 @@ document.addEventListener('click', ev => {
   if (aid === 'legalNoticeDeclineButton') { S.cookies = 'declined'; document.getElementById('cookie').remove(); return; }
   if (aid === 'legalNoticeAcceptButton') { S.cookies = 'accepted'; document.getElementById('cookie').remove(); return; }
   if (aid === 'SignInWithEmailButton') { S.step = 'signin'; render(); return; }
-  if (aid === 'createAccountLink') { S.step = 'auth'; render(); return; }
+  if (aid === 'createAccountLink') { S.bee = (document.getElementById('bee') || {}).value || ''; S.step = 'auth'; render(); return; }
   if (aid === 'adventureButton') { ev.preventDefault(); S.step = 'start'; render(); }
   else if (aid === 'autofillWithResume' || aid === 'applyManually') { ev.preventDefault(); S.start = aid; S.step = 'landing'; root.innerHTML = ''; setTimeout(render, 3000); }
   else if (aid === 'createAccountSubmitButton') {
     if (!document.getElementById('terms').checked) return;
+    S.bee = (document.getElementById('bee') || {}).value || S.bee || '';
     S.account = document.querySelector('[data-automation-id=email]').value; S.pw = document.querySelector('[data-automation-id=password]').value;
     S.step = S.start === 'autofillWithResume' ? 'autofill' : 'myinfo'; render(); }
   else if (t.getAttribute && t.getAttribute('aria-haspopup') === 'listbox') {

@@ -42,6 +42,7 @@ SCAN_JS = """() => {
   for (const el of ctrls) {
     const type = (el.type || '').toLowerCase();
     if (['hidden', 'file', 'submit', 'button', 'search', 'password', 'image', 'reset'].includes(type)) continue;
+    if (/beecatcher|honeypot|hp_|bot_?trap/i.test((el.getAttribute('data-automation-id') || '') + ' ' + el.id + ' ' + el.name)) continue;
     if (type === 'radio' || type === 'checkbox') {
       if (!vis(el) && !vis(el.closest('label')) && !vis(el.parentElement)) continue;
       const fs = el.closest('fieldset, [role=group], [role=radiogroup], .application-question, .field-wrapper');
@@ -83,7 +84,7 @@ SCAN_JS = """() => {
             value: kind === 'checkbox' ? (on.length ? 'checked' : '') : on.map(optLabel).join('; '),
             required: /[*✱]/.test(lab) || f.els.some(e => e.required || e.getAttribute('aria-required') === 'true')};
   }).map(f => Object.assign(f, {required: f.required || /[*✱]/.test(f.label), label: f.label.replace(/[*✱]/g, '').trim()}))
-    .filter(f => f.label);
+    .filter(f => f.label && !/for robots only|if you('| a)re human|leave (this )?(field )?blank/i.test(f.label));
 }"""
 
 OPTIONS_SEL = '[role="listbox"] [role="option"], .select__menu [role="option"], [class*="select__option"]'

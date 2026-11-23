@@ -182,6 +182,8 @@ try:
         check("browser phase2: never submitted", not _S["submitted"])
         check("browser phase2: invisible reCAPTCHA badge + hidden challenge frame are not a CAPTCHA pause (Nov 23)",
               not any("CAPTCHA" in s_[0] for s_ in _seen), str([s_[0] for s_ in _seen]))
+        check("browser phase2: Workday's empty noCaptchaWrapper is not a CAPTCHA; the bot-trap field stays empty (Nov 23)",
+              not any("CAPTCHA" in s_[0] for s_ in _seen) and not _S.get("bee"), str(_S.get("bee")))
         _pg2 = _b.new_page()
         _pg2.set_content('<iframe title="reCAPTCHA" style="width:304px;height:78px" src="about:blank#https://www.google.com/recaptcha/api2/anchor?k=x&size=normal"></iframe>')
         check("browser phase2: a visible reCAPTCHA checkbox still counts as a CAPTCHA", _pg2.evaluate(wdm.STATE_JS)["captcha"] is True)
