@@ -211,6 +211,11 @@ class FormFiller:
             reason = (f"{n} question{'s' if n > 1 else ''} need you on this form. Answer in the Control Center "
                       "(Apply tab) or on the page.")
             print(f"PAUSED ({self.job.get('company')}): {reason}", flush=True)
+            try:
+                import workday
+                workday.debug_dump(self.page, "pause")
+            except Exception:  # noqa: BLE001
+                pass
             aw.show_banner(self.page, "greenhouse_lever", text="PAUSED: " + reason)
             ab.write_pending(self.job, "Application form", pending, waiting=reason)
             try:

@@ -124,6 +124,40 @@ STATE_JS = """() => {
 
 NEXT_IDS = ("pageFooterNextButton", "bottom-navigation-next-button")
 
+# Nov 23: read-only snapshot written on every pause, so a run can be diagnosed without seeing the screen.
+DEBUG_JS = """() => {
+  const r = e => { const b = e.getBoundingClientRect(), c = getComputedStyle(e);
+    return {w: Math.round(b.width), h: Math.round(b.height), top: Math.round(b.top), vis: c.visibility, disp: c.display, op: c.opacity}; };
+  const lab = e => (e.innerText || e.value || e.getAttribute('aria-label') || '').trim().slice(0, 60);
+  return {url: location.href, title: document.title,
+    iframes: [...document.querySelectorAll('iframe')].map(f => Object.assign({src: (f.src || '').slice(0, 160), title: f.title || ''}, r(f))),
+    captcha_aids: [...document.querySelectorAll('[data-automation-id*="captcha" i]')].map(e => Object.assign({aid: e.getAttribute('data-automation-id')}, r(e))),
+    buttons: [...document.querySelectorAll('button, [role=button], a[data-automation-id]')].filter(e => e.offsetParent !== null)
+       .map(e => ({aid: e.getAttribute('data-automation-id') || '', text: lab(e)})).slice(0, 60),
+    inputs: [...document.querySelectorAll('input, select, textarea')].filter(e => e.offsetParent !== null)
+       .map(e => ({aid: e.getAttribute('data-automation-id') || '', type: e.type || '', id: e.id || '', label: (e.labels && e.labels[0] ? e.labels[0].innerText : e.getAttribute('aria-label') || '').trim().slice(0, 80)})).slice(0, 80),
+    text: (document.body ? document.body.innerText : '').slice(0, 3000)};
+}"""
+
+
+def debug_dump(page, tag: str = "pause") -> None:
+    """Writes output/_debug/<tag>_dump.json (+ .png). Never clicks or types."""
+    import json
+    from common import ROOT
+    out = ROOT / "output" / "_debug"
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        data = page.evaluate(DEBUG_JS)
+        try:
+            data["state"] = page.evaluate(STATE_JS)
+        except Exception:  # noqa: BLE001
+            pass
+        data["frames"] = [f.url[:160] for f in page.frames]
+        (out / f"{tag}_dump.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
+        page.screenshot(path=str(out / f"{tag}_dump.png"))
+    except Exception as exc:  # noqa: BLE001
+        print(f"  (debug dump failed: {exc.__class__.__name__})", flush=True)
+
 # My Experience page (Nov 21 fix): Work Experience / Education / Languages start EMPTY behind an "Add" button, so the
 # field scan found nothing there. ADD_JS lists the visible Add buttons with the section they belong to. Workday's
 # button says "Add" for an empty section and "Add Another" once it has an entry (then the code leaves it alone).
@@ -323,6 +357,7 @@ class WorkdayFiller:
     # ------------------------------------------------ pause (he takes over one step)
     def pause(self, reason: str, until=None, items: list | None = None, page_name: str = ""):
         print(f"PAUSED ({self.job.get('company')}): {reason}", flush=True)
+        debug_dump(self.page, "pause")
         self.banner("PAUSED: " + reason)
         _beep()
         ab.write_pending(self.job, page_name, items or [], waiting=reason)
@@ -384,6 +419,7 @@ class WorkdayFiller:
                 name = st["step"] or st["heading"]
                 self.fill_page(name)
                 if not self.next_page(name):
+                    debug_dump(self.page, "stopped")
                     if st.get("signin_landing") or re.search(r"sign in|create account", name or "", re.I):
                         return "stopped: sign-in page the pipeline doesn't know (no email box, no 'Sign in with email')"
                     return "stopped: no Next button"
