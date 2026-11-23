@@ -180,6 +180,12 @@ try:
         _d = _S["data"]
         check("browser phase2: walks Apply -> account -> pages -> stops at Review", _out == "review" and _S["step"] == "review", _out)
         check("browser phase2: never submitted", not _S["submitted"])
+        check("browser phase2: invisible reCAPTCHA badge + hidden challenge frame are not a CAPTCHA pause (Nov 23)",
+              not any("CAPTCHA" in s_[0] for s_ in _seen), str([s_[0] for s_ in _seen]))
+        _pg2 = _b.new_page()
+        _pg2.set_content('<iframe title="reCAPTCHA" style="width:304px;height:78px" src="about:blank#https://www.google.com/recaptcha/api2/anchor?k=x&size=normal"></iframe>')
+        check("browser phase2: a visible reCAPTCHA checkbox still counts as a CAPTCHA", _pg2.evaluate(wdm.STATE_JS)["captcha"] is True)
+        _pg2.close()
         check("browser phase2: Sign In landing page (Nov 23 Baker Hughes): cookies declined, 'Sign in with email', "
               "then Create Account; resume uploaded on 'Autofill with Resume'",
               _S.get("cookies") == "declined" and _S.get("afFiles") == ["resume.pdf"], str({k: _S.get(k) for k in ("cookies", "afFiles", "step")}))

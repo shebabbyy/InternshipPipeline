@@ -87,7 +87,17 @@ STATE_JS = """() => {
   const q = s => [...document.querySelectorAll(s)].filter(vis);
   const txt = e => (e ? (e.innerText || '') : '').replace(/\\s+/g, ' ').trim();
   const body = (document.body ? document.body.innerText : '').toLowerCase();
-  const frames = [...document.querySelectorAll('iframe')].map(f => (f.src || '') + ' ' + (f.title || '')).join(' ').toLowerCase();
+  // Nov 23: Workday (and many careers sites) load Google's INVISIBLE reCAPTCHA on every page (badge iframe with
+  // size=invisible + a hidden challenge frame). Only a challenge he can actually see counts as a CAPTCHA.
+  const shown = f => { if (!vis(f)) return false; const r = f.getBoundingClientRect(), cs = getComputedStyle(f);
+    let n = f; while (n) { const c = getComputedStyle(n); if (c.visibility === 'hidden' || c.display === 'none' || +c.opacity === 0) return false; n = n.parentElement; }
+    return r.width > 40 && r.height > 40 && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth; };
+  const captchaFrame = f => { const src = ((f.src || '') + ' ' + (f.title || '')).toLowerCase();
+    if (!/recaptcha|hcaptcha|turnstile|arkose|funcaptcha|captcha/.test(src)) return false;
+    if (/size=invisible/.test(src)) return false;                      // the corner badge, never a challenge
+    if (/recaptcha\/(api2|enterprise)\/bframe|challenge/.test(src)) { const r = f.getBoundingClientRect(); return shown(f) && r.width > 150 && r.height > 150; }
+    return shown(f); };
+  const frames = [...document.querySelectorAll('iframe')].some(captchaFrame);
   const errs = q('[data-automation-id="errorMessage"], [data-automation-id="inputAlert"], [role=alert]').map(txt).filter(Boolean);
   return {
     adventure: q('[data-automation-id="adventureButton"]').length > 0,
@@ -97,7 +107,7 @@ STATE_JS = """() => {
     verify_pw: q('input[data-automation-id="verifyPassword"]').length > 0,
     terms: q('input[data-automation-id="createAccountCheckbox"]').map(e => e.checked)[0],
     create_link: q('[data-automation-id="createAccountLink"]').length > 0,
-    captcha: /recaptcha|hcaptcha|turnstile|arkose|funcaptcha|captcha/.test(frames) || q('[data-automation-id*="captcha" i]').length > 0,
+    captcha: frames || q('[data-automation-id*="captcha" i]').some(e => e.getBoundingClientRect().height > 20),
     verify_email: /verify your (email|account)|verification (email|link)|check your email|activate your account/.test(body),
     errors: errs.slice(0, 6),
     step: txt(q('[data-automation-id="progressBarActiveStep"]')[0]),
