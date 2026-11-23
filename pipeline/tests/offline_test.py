@@ -405,4 +405,7 @@ exec(compile((IP / "pipeline" / "tests" / "phase3_checks.py").read_text(encoding
 # ---------------- phase 4: outreach queue, Hunter lookup, sender tags, sent-email events
 exec(compile((IP / "pipeline" / "tests" / "phase4_checks.py").read_text(encoding="utf-8"), "phase4_checks.py", "exec"))
 
+# ---------------- Nov 23: Greenhouse / Lever custom questions
+exec(compile((IP / "pipeline" / "tests" / "forms_checks.py").read_text(encoding="utf-8"), "forms_checks.py", "exec"))
+
 print("\nFAILED: " + ", ".join(fails) if fails else "\nALL PASSED")

@@ -1,0 +1,74 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Fake Greenhouse (offline test)</title>
+<style>.select__menu{border:1px solid #999} [hidden]{display:none}</style></head>
+<body>
+<!-- Imitation of a job-boards.greenhouse.io form (react-select comboboxes, native selects, radio + checkbox groups,
+     EEO section, a Lever-style card) for pipeline/tests/forms_checks.py only. -->
+<form id="application-form">
+<div class="field-wrapper"><label for="first_name" class="label">First Name<span>*</span></label><input id="first_name" aria-required="true"></div>
+<div class="field-wrapper"><label for="last_name" class="label">Last Name<span>*</span></label><input id="last_name" aria-required="true"></div>
+<div class="field-wrapper"><label for="email" class="label">Email<span>*</span></label><input id="email" type="email" aria-required="true"></div>
+<div class="field-wrapper"><label for="phone" class="label">Phone</label><input id="phone" type="tel"></div>
+<div class="field-wrapper"><label for="q_li" class="label">LinkedIn Profile</label><input id="q_li"></div>
+<input type="file" id="resume" style="display:none"><input type="file" id="cover_letter" style="display:none">
+<div id="combos"></div>
+<div class="field-wrapper"><label for="q_gpa" class="label">What is your current GPA?*</label><input id="q_gpa" aria-required="true"></div>
+<div class="field-wrapper"><label for="q_pref" class="label">Practice Preference #1*</label>
+  <select id="q_pref" required><option>Please select</option><option>Finance &amp; Damages</option><option>Energy</option></select></div>
+<div class="field-wrapper"><label for="q_why" class="label">Why are you interested in CRA?</label><textarea id="q_why"></textarea></div>
+<fieldset><legend>Are you at least 18 years of age?*</legend>
+  <label><input type="radio" name="q18" value="y">Yes</label><label><input type="radio" name="q18" value="n">No</label></fieldset>
+<li class="application-question"><div class="application-label"><div class="text">Are you willing to relocate?<span>✱</span></div></div>
+  <div class="application-field"><label><input type="radio" name="reloc" value="Yes">Yes</label><label><input type="radio" name="reloc" value="No">No</label></div></li>
+<fieldset><legend>Which offices interest you? (optional)</legend>
+  <label><input type="checkbox" name="o1">Boston</label><label><input type="checkbox" name="o2">Houston</label></fieldset>
+<div class="field-wrapper"><label><input type="checkbox" id="q_cert" required> I certify that the information above is true*</label></div>
+<h3>Voluntary Self-Identification</h3>
+<div id="eeo"></div>
+<button type="button" id="submit">Submit application</button>
+</form>
+<script>
+const S = {submitted: false}; window.S = S;
+const combo = (id, label, opts, req) => `<div class="select__container"><label id="${id}-label" for="${id}" class="label">${label}${req ? '*' : ''}</label>
+  <div class="select-shell"><div class="select__control"><div class="select__value-container" id="${id}-vc"></div>
+  <input id="${id}" role="combobox" aria-labelledby="${id}-label" ${req ? 'aria-required="true"' : ''} data-opts="${opts.join('|')}" autocomplete="off"></div>
+  <div class="select__menu" id="${id}-menu" hidden></div></div></div>`;
+document.getElementById('combos').innerHTML =
+  combo('q_auth', 'Are you legally authorized to work in the United States?', ['Yes', 'No'], 1) +
+  combo('q_spon', 'Will you now or in the future require sponsorship?', ['Yes', 'No'], 1) +
+  combo('q_hear', 'How did you hear about this job?', ['LinkedIn', 'Indeed', 'Company Website', 'Referral'], 1) +
+  combo('q_loc', 'Location (City)', ['@async'], 0) +
+  combo('q_school', 'School', ['@school'], 1) +
+  combo('q_off', 'Location preference #1', ['Boston', 'Houston', 'Chicago'], 1);
+document.getElementById('eeo').innerHTML =
+  combo('gender', 'Gender', ['Male', 'Female', 'Decline To Self Identify'], 0) +
+  combo('veteran_status', 'Veteran Status', ['I am a veteran', 'I am not a protected veteran', "I don't wish to answer"], 0);
+const CITIES = ['Houston, Texas, United States', 'Houston, Missouri, United States', 'Boston, Massachusetts, United States'];
+const SCHOOLS = ['University of Houston', 'University of Houston - Clear Lake', 'Rice University'];
+function openMenu(inp) {
+  const m = document.getElementById(inp.id + '-menu'), src = inp.dataset.opts.split('|'), q = inp.value.toLowerCase();
+  let list = src[0] === '@async' ? (q.length >= 3 ? CITIES : []) : src[0] === '@school' ? (q.length >= 3 ? SCHOOLS : []) : src;
+  list = list.filter(o => o.toLowerCase().includes(q));
+  m.innerHTML = list.map(o => `<div role="option" class="select__option">${o}</div>`).join('');
+  m.hidden = !list.length; m.dataset.for = inp.id;
+}
+document.addEventListener('click', ev => {
+  const t = ev.target;
+  if (t.getAttribute('role') === 'combobox') { openMenu(t); return; }
+  if (t.getAttribute('role') === 'option') {
+    const m = t.closest('.select__menu'), id = m.dataset.for;
+    document.getElementById(id + '-vc').innerHTML = `<div class="select__single-value">${t.textContent}</div>`;
+    document.getElementById(id).value = ''; m.hidden = true; return; }
+  if (t.id === 'submit') S.submitted = true;
+});
+document.addEventListener('input', ev => { if (ev.target.getAttribute('role') === 'combobox') openMenu(ev.target); });
+window.collect = () => {
+  const v = id => (document.getElementById(id + '-vc') || {}).textContent || '';
+  const r = n => (document.querySelector(`input[name=${n}]:checked`) || {}).value || '';
+  return {auth: v('q_auth'), spon: v('q_spon'), hear: v('q_hear'), loc: v('q_loc'), school: v('q_school'), off: v('q_off'),
+          gender: v('gender'), vet: v('veteran_status'), gpa: document.getElementById('q_gpa').value,
+          pref: document.getElementById('q_pref').value, why: document.getElementById('q_why').value,
+          q18: r('q18'), reloc: r('reloc'), cert: document.getElementById('q_cert').checked,
+          offices: [...document.querySelectorAll('fieldset input[type=checkbox]:checked')].length};
+};
+</script></body></html>

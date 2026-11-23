@@ -422,13 +422,30 @@ def run(limit: int = 6, job_id: str | None = None) -> int:
                 note = (f"Workday: filled {n} fields, stopped at Review. Check the panel, then Submit yourself."
                         if outcome == "review" else
                         f"Workday: filled {n} fields, then handed over ({outcome}). Finish by hand or with Simplify.")
-            elif kind == "greenhouse_lever":
+            gh_left = None
+            if kind == "greenhouse_lever":
                 try:
                     n = fill_greenhouse_lever(page, job)
                 except Exception as exc:  # noqa: BLE001
                     log(f"  {job['company']}: autofill skipped ({exc.__class__.__name__})")
+                try:   # Nov 23: custom questions from the answer bank; unknown ones go to the Paused card
+                    import form_questions
+                    outcome, qfilled, gh_left = form_questions.fill(
+                        page, job, wait_minutes=None if os.environ.get("PIPELINE_GUI") else 0)
+                    filled.update(qfilled)
+                    n += len(qfilled)
+                    log(f"  {job['company']}: questions: answered {len(qfilled)}"
+                        + (f"; still needs you: {', '.join(gh_left)[:200]}" if gh_left else "; every required question answered"))
+                except aw.GuardError as exc:
+                    log(f"  {job['company']}: question filler stopped ({exc})")
+                except Exception as exc:  # noqa: BLE001
+                    log(f"  {job['company']}: question filler skipped ({exc.__class__.__name__}: {str(exc)[:120]})")
             if not use_wd:
-                note = (f"Auto-filled {n} fields. Review, answer any custom questions, then Submit." if n else
+                note = (f"Auto-filled {n} fields; every required question answered. Check it, then Submit yourself."
+                        if n and gh_left == [] else
+                        f"Auto-filled {n} fields; still needs you: {', '.join(gh_left)[:160]}. Then Submit yourself."
+                        if n and gh_left else
+                        f"Auto-filled {n} fields. Review, answer any custom questions, then Submit." if n else
                         f"{hint or aw.BANNERS[kind]} Answers to paste: {sheet.name}.")
             mark_dirty(conn, job["id"], status="FILLED", notes=note)
             log(f"  {job['company']}: {note}")
