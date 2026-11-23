@@ -131,7 +131,7 @@ document.addEventListener('click', ev => {
   if (aid === 'SignInWithEmailButton') { S.step = 'signin'; render(); return; }
   if (aid === 'createAccountLink') { S.step = 'auth'; render(); return; }
   if (aid === 'adventureButton') { ev.preventDefault(); S.step = 'start'; render(); }
-  else if (aid === 'autofillWithResume' || aid === 'applyManually') { ev.preventDefault(); S.start = aid; S.step = 'landing'; render(); }
+  else if (aid === 'autofillWithResume' || aid === 'applyManually') { ev.preventDefault(); S.start = aid; S.step = 'landing'; root.innerHTML = ''; setTimeout(render, 3000); }
   else if (aid === 'createAccountSubmitButton') {
     if (!document.getElementById('terms').checked) return;
     S.account = document.querySelector('[data-automation-id=email]').value; S.pw = document.querySelector('[data-automation-id=password]').value;

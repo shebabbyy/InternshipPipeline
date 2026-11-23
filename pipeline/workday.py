@@ -310,6 +310,7 @@ class WorkdayFiller:
         self.exp_left: list = []                     # My Experience fields only he can fill (e.g. a school start year)
         self.started = time.time()
         self.auth_tries = 0
+        self.idle_waits = 0
         self.host = (urlparse(page.url).hostname or "").lower()
 
     # ------------------------------------------------ small helpers
@@ -390,7 +391,7 @@ class WorkdayFiller:
         """'review' when it reached the Review page; otherwise a short reason it handed over."""
         self.banner("Workday: the pipeline is filling this application. Don't click until it pauses or reaches Review.")
         try:
-            for _ in range(25):
+            for _ in range(60):
                 st = self.state()
                 if st.get("cookie"):
                     self.decline_cookies()
@@ -416,6 +417,12 @@ class WorkdayFiller:
                 if st["verify_email"] and not st["password"] and not st["fields"]:
                     self.verify_email()
                     continue
+                if not (st["fields"] or st["email"] or st.get("files_any")) and self.idle_waits < 12:
+                    # Nov 23 (Baker Hughes): the sign-in step's form renders a few seconds after the step bar.
+                    self.idle_waits += 1
+                    self.page.wait_for_timeout(2500)
+                    continue
+                self.idle_waits = 0
                 name = st["step"] or st["heading"]
                 self.fill_page(name)
                 if not self.next_page(name):
