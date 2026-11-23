@@ -104,6 +104,11 @@ STATE_JS = """() => {
     heading: txt(q('h2, h1')[0]),
     path: location.pathname,
     fields: q('[data-automation-id^="formField-"]').length,
+    // Nov 23 (Baker Hughes): some tenants open on a Sign In landing page (Apple / Google / "Sign in with email")
+    // with no email or password box until "Sign in with email" is clicked.
+    signin_landing: q('[data-automation-id="SignInWithEmailButton"]').length > 0,
+    cookie: q('[data-automation-id="legalNoticeDeclineButton"]').length > 0,
+    files_any: [...document.querySelectorAll('input[type=file]')].length,
   };
 }"""
 
@@ -342,6 +347,9 @@ class WorkdayFiller:
         try:
             for _ in range(25):
                 st = self.state()
+                if st.get("cookie"):
+                    self.decline_cookies()
+                    continue
                 if st["captcha"]:
                     self.pause("CAPTCHA. Solve it yourself; the pipeline never does.", lambda: not self.state()["captcha"])
                     continue
@@ -349,6 +357,9 @@ class WorkdayFiller:
                     return "review"
                 if st["password"]:
                     self.auth(st)
+                    continue
+                if st.get("signin_landing"):
+                    self.sign_in_with_email()
                     continue
                 if st["start"]:
                     self.choose_start()
@@ -363,6 +374,8 @@ class WorkdayFiller:
                 name = st["step"] or st["heading"]
                 self.fill_page(name)
                 if not self.next_page(name):
+                    if st.get("signin_landing") or re.search(r"sign in|create account", name or "", re.I):
+                        return "stopped: sign-in page the pipeline doesn't know (no email box, no 'Sign in with email')"
                     return "stopped: no Next button"
             return "stopped: too many pages"
         except Stop as why:
@@ -372,6 +385,37 @@ class WorkdayFiller:
         finally:
             ab.clear_pending()
             self.banner(DONE_TEXT)
+
+    # ------------------------------------------------ cookie banner + sign-in landing (Nov 23)
+    def _press(self, loc):
+        """safe_click, then a forced click if a Workday overlay (click_filter) catches the pointer."""
+        try:
+            aw.safe_click(loc, self.page, timeout=4000)
+        except aw.GuardError:
+            raise
+        except Exception:  # noqa: BLE001
+            aw.safe_click(loc, self.page, force=True)
+        self.nap()
+
+    def decline_cookies(self):
+        """Privacy rule: decline non-essential cookies, so the banner can't cover buttons."""
+        self.cookie_tries = getattr(self, "cookie_tries", 0) + 1
+        loc = self.first('[data-automation-id="legalNoticeDeclineButton"]')
+        if loc is None or self.cookie_tries > 3:
+            raise Stop("cookie banner won't close; close it yourself")
+        self._press(loc)
+        self.page.wait_for_timeout(1200)
+        print("  Declined non-essential cookies.", flush=True)
+
+    def sign_in_with_email(self):
+        self.landing_tries = getattr(self, "landing_tries", 0) + 1
+        if self.landing_tries > 3:
+            self.pause("Click 'Sign in with email' yourself (the page didn't open the email form).",
+                       lambda: not self.state().get("signin_landing"))
+            return
+        self._press(self.first('[data-automation-id="SignInWithEmailButton"]'))
+        self.page.wait_for_timeout(2500)
+        print("  Clicked 'Sign in with email' on the Workday sign-in page.", flush=True)
 
     # ------------------------------------------------ start + account
     def choose_start(self):
@@ -559,6 +603,30 @@ class WorkdayFiller:
         except Exception:  # noqa: BLE001
             return bool(have)
 
+    def upload_loose(self, name: str):
+        """'Autofill with Resume' step (Nov 23): the resume drop zone isn't inside a formField wrapper, so the scan
+        misses it. Upload the resume there once, if nothing is attached yet."""
+        resume = self.files.get("resume")
+        if not resume or getattr(self, "loose_done", None) == name:
+            return
+        if not re.search(r"autofill|resume|upload", name or "", re.I):
+            return
+        box = self.page.locator('input[type=file][data-automation-id="file-upload-input-ref"], input[type=file]')
+        try:
+            if not box.count():
+                return
+            listed = self.page.locator('[data-automation-id*="file-upload-item-name" i], [data-automation-id="fileName"], '
+                                       '[data-automation-id="file-upload-successful"]')
+            if listed.count():
+                return
+            box.first.set_input_files(resume)
+            self.loose_done = name
+            self.page.wait_for_timeout(5000)          # Workday parses the resume before Next works
+            self.filled["Autofill with Resume"] = self._base(resume)
+            print(f"  Uploaded the resume on '{name}'.", flush=True)
+        except Exception:  # noqa: BLE001
+            pass
+
     def fill_page(self, name: str):
         self.fill_experience()
         pending = []
@@ -566,6 +634,8 @@ class WorkdayFiller:
             pending += self.exp_left
             self.exp_left = []
         fields = self.scan()
+        if not any(f["kind"] == "file" for f in fields):
+            self.upload_loose(name)
         cover_field = any(f["kind"] == "file" and re.search(r"cover", ab.norm(f["label"])) for f in fields)
         for f in fields:
             if f.get("exp"):

@@ -180,6 +180,9 @@ try:
         _d = _S["data"]
         check("browser phase2: walks Apply -> account -> pages -> stops at Review", _out == "review" and _S["step"] == "review", _out)
         check("browser phase2: never submitted", not _S["submitted"])
+        check("browser phase2: Sign In landing page (Nov 23 Baker Hughes): cookies declined, 'Sign in with email', "
+              "then Create Account; resume uploaded on 'Autofill with Resume'",
+              _S.get("cookies") == "declined" and _S.get("afFiles") == ["resume.pdf"], str({k: _S.get(k) for k in ("cookies", "afFiles", "step")}))
         check("browser phase2: account made with Gmail + vault password, terms box ticked by him",
               _S["account"] == ab.account_email() and _S["pw"] == "Pw-test-1!" and _seen and "terms box" in _seen[0][0])
         check("browser phase2: My Information filled from the profile",

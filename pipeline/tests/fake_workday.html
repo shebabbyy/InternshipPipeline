@@ -9,6 +9,9 @@
 <div data-automation-id="progressBar"><span data-automation-id="progressBarActiveStep" id="step"></span></div>
 <h2 id="head"></h2>
 <div id="root"></div>
+<div id="cookie" style="position:fixed;bottom:0;left:0;right:0;height:60%;background:#eee">We use cookies.
+  <button data-automation-id="legalNoticeAcceptButton">Accept Cookies</button>
+  <button data-automation-id="legalNoticeDeclineButton">Decline</button></div>
 <div id="lb" class="lb" role="listbox" hidden></div>
 <script>
 const S = {step: 'posting', data: {}, account: false, submitted: false, nextClicks: 0};
@@ -60,13 +63,21 @@ function collectExp() {
 const next = `<button data-automation-id="pageFooterNextButton" id="next">Next</button>`;
 function render() {
   const st = S.step;
-  document.getElementById('step').textContent = {myinfo: 'My Information', experience: 'My Experience', questions: 'Application Questions',
+  document.getElementById('step').textContent = {autofill: 'Autofill with Resume', myinfo: 'My Information', experience: 'My Experience', questions: 'Application Questions',
      voluntary: 'Voluntary Disclosures', review: 'Review'}[st] || '';
-  document.getElementById('head').textContent = {posting: 'Accounting Intern', auth: 'Create Account', myinfo: 'My Information', experience: 'My Experience',
+  document.getElementById('head').textContent = {posting: 'Accounting Intern', landing: 'Sign In', signin: 'Sign In', autofill: 'Autofill with Resume', auth: 'Create Account', myinfo: 'My Information', experience: 'My Experience',
      questions: 'Application Questions', voluntary: 'Voluntary Disclosures', review: 'Review'}[st] || '';
   if (st === 'posting') root.innerHTML = `<a href="#" data-automation-id="adventureButton">Apply</a>`;
   if (st === 'start') root.innerHTML = `<a href="#" data-automation-id="autofillWithResume">Autofill with Resume</a>
       <a href="#" data-automation-id="applyManually">Apply Manually</a>`;
+  if (st === 'landing') root.innerHTML = `<button data-automation-id="AppleSignInButton">Sign in with Apple</button>
+      <button data-automation-id="GoogleSignInButton">Sign in with Google</button>
+      <button data-automation-id="SignInWithEmailButton">Sign in with email</button>`;
+  if (st === 'signin') root.innerHTML = `<input data-automation-id="email" type="email"><input data-automation-id="password" type="password">
+      <button data-automation-id="signInSubmitButton">Sign In</button>
+      <button data-automation-id="createAccountLink">Create Account</button>`;
+  if (st === 'autofill') root.innerHTML = `<div data-automation-id="file-upload-drop-zone">
+      <input type="file" data-automation-id="file-upload-input-ref" id="af"><div id="af-list"></div></div>` + next;
   if (st === 'auth') root.innerHTML = `<input data-automation-id="email" type="email"><input data-automation-id="password" type="password">
       <input data-automation-id="verifyPassword" type="password">
       <label><input type="checkbox" data-automation-id="createAccountCheckbox" id="terms"> I agree to the Terms and Conditions</label>
@@ -111,12 +122,16 @@ document.addEventListener('click', ev => {
   if (t.getAttribute && t.getAttribute('role') === 'option' && lb.dataset.ms) {
     document.getElementById(lb.dataset.ms + '-sel').insertAdjacentHTML('beforeend', `<span data-automation-id="selectedItem">${t.textContent}</span>`);
     const inp = document.getElementById(lb.dataset.ms); inp.value = ''; lb.hidden = true; lb.dataset.ms = ''; return; }
+  if (aid === 'legalNoticeDeclineButton') { S.cookies = 'declined'; document.getElementById('cookie').remove(); return; }
+  if (aid === 'legalNoticeAcceptButton') { S.cookies = 'accepted'; document.getElementById('cookie').remove(); return; }
+  if (aid === 'SignInWithEmailButton') { S.step = 'signin'; render(); return; }
+  if (aid === 'createAccountLink') { S.step = 'auth'; render(); return; }
   if (aid === 'adventureButton') { ev.preventDefault(); S.step = 'start'; render(); }
-  else if (aid === 'autofillWithResume' || aid === 'applyManually') { ev.preventDefault(); S.start = aid; S.step = 'auth'; render(); }
+  else if (aid === 'autofillWithResume' || aid === 'applyManually') { ev.preventDefault(); S.start = aid; S.step = 'landing'; render(); }
   else if (aid === 'createAccountSubmitButton') {
     if (!document.getElementById('terms').checked) return;
     S.account = document.querySelector('[data-automation-id=email]').value; S.pw = document.querySelector('[data-automation-id=password]').value;
-    S.step = 'myinfo'; render(); }
+    S.step = S.start === 'autofillWithResume' ? 'autofill' : 'myinfo'; render(); }
   else if (t.getAttribute && t.getAttribute('aria-haspopup') === 'listbox') {
     lb.dataset.ms = '';
     lb.innerHTML = t.dataset.opts.split('|').map(o => `<div role="option">${o}</div>`).join(''); lb.hidden = false; lb.dataset.for = t.id; }
@@ -129,12 +144,16 @@ document.addEventListener('click', ev => {
     ['prev', 'spon'].forEach(n => { if (document.querySelector(`input[name=${n}]`)) S.data[n] = radio(n); });
     if (document.getElementById('cv')) S.data.cv = (S.cvFiles || []).length;
     if (S.step === 'experience') S.exp = collectExp();
-    const order = ['myinfo', 'experience', 'questions', 'voluntary', 'review'];
+    if (S.step === 'autofill' && !(S.afFiles || []).length) return;   // Workday wants the resume first
+    const order = ['autofill', 'myinfo', 'experience', 'questions', 'voluntary', 'review'];
     S.step = order[order.indexOf(S.step) + 1]; render(); }
   else if (t.id === 'submit') { S.submitted = true; }
 });
 document.addEventListener('change', ev => {       // like Workday: each upload is ADDED to the attachment list
-  const t = ev.target; if (t.id !== 'cv') return;
+  const t = ev.target;
+  if (t.id === 'af') { S.afFiles = [...t.files].map(f => f.name);
+    document.getElementById('af-list').innerHTML = S.afFiles.map(n => `<div data-automation-id="file-upload-successful">${n}</div>`).join(''); return; }
+  if (t.id !== 'cv') return;
   S.cvFiles = (S.cvFiles || []).concat([...t.files].map(f => f.name));
   document.getElementById('cv-list').innerHTML = S.cvFiles.map(n => `<div data-automation-id="fileName">${n}</div>`).join('');
 });
