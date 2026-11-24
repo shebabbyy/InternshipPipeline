@@ -602,13 +602,18 @@ class WorkdayFiller:
                     aw.safe_click(target, self.page, force=True)
             elif kind == "multiselect":
                 box = w.locator('input').first
-                box.fill(answer)
-                box.press("Enter")
-                self.page.wait_for_timeout(1500)
                 opts = self.page.locator('[data-automation-id="promptOption"], [role="listbox"] [role="option"]')
-                texts = [t.strip() for t in opts.all_inner_texts()] if opts.count() else []
-                choice = ab.pick_option(answer, texts)
+                choice = None
+                for alt in ab.answer_variants(f["label"], answer, self.job):   # same fact, other wordings
+                    box.fill(alt)
+                    box.press("Enter")
+                    self.page.wait_for_timeout(1500)
+                    texts = [t.strip() for t in opts.all_inner_texts()] if opts.count() else []
+                    choice = ab.pick_option(alt, texts)
+                    if choice is not None:
+                        break
                 if choice is None:
+                    box.fill("")
                     self.page.keyboard.press("Escape")
                     return False
                 self.click(opts.nth(texts.index(choice)))
@@ -796,8 +801,31 @@ class WorkdayFiller:
             elif not ok:
                 self.skipped.append(f"{where}: {f['label']}")
 
+    def read_prompt_options(self, f) -> list[str]:
+        """Open a Workday pick list just to read its choices for the Paused card (selects nothing)."""
+        try:
+            w = self.wrap(f)
+            box = w.locator('input').first
+            box.fill("")
+            aw.safe_click(box, self.page, timeout=3000)
+            self.page.wait_for_timeout(1200)
+            opts = self.page.locator('[data-automation-id="promptOption"], [role="listbox"] [role="option"]')
+            texts = [t.strip() for t in opts.all_inner_texts() if t.strip()][:40] if opts.count() else []
+            self.page.keyboard.press("Escape")
+            return texts
+        except aw.GuardError:
+            raise
+        except Exception:  # noqa: BLE001
+            return []
+
     def _item(self, f, cat, note=""):
-        return {"label": f["label"], "kind": f["kind"], "options": f.get("options") or [], "category": cat,
+        opts = f.get("options") or []
+        kind = f["kind"]
+        if not opts and kind in ("multiselect", "dropdown") and cat != "never":
+            opts = self.read_prompt_options(f)
+        if opts and kind == "multiselect":
+            kind = "dropdown"        # the Paused card shows a pick list
+        return {"label": f["label"], "kind": kind, "options": opts, "category": cat,
                 "note": note, "idx": f["idx"]}
 
     def _resolved(self, items) -> bool:

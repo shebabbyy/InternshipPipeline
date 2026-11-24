@@ -93,6 +93,7 @@ function render() {
       dd('country', 'Country', ['United States of America', 'Canada'], 1) + text('phone', 'Phone Number', 1) +
       dd('dtype', 'Phone Device Type', ['Landline', 'Mobile'], 1) +
       radios('prev', 'Have you previously worked for Tokio Marine HCC?', ['Yes', 'No'], 1) +
+      ms('hear', 'How Did You Hear About Us?', ['Job Board', 'Tokio Marine HCC Career Site', 'Employee Referral'], 1) +
       field('cv', 'Resume/CV', `<input type="file" id="cv" multiple><div id="cv-list"></div>`, 1) + next;
   if (st === 'experience') { if (S.expRendered) return; S.expRendered = true;
       root.innerHTML = section('work', 'Work Experience') + section('edu', 'Education') + section('lang', 'Languages') +
@@ -150,6 +151,7 @@ document.addEventListener('click', ev => {
     ids.forEach(i => S.data[i] = val(i));
     ['prev', 'spon'].forEach(n => { if (document.querySelector(`input[name=${n}]`)) S.data[n] = radio(n); });
     if (document.getElementById('cv')) S.data.cv = (S.cvFiles || []).length;
+    if (document.getElementById('hear-sel')) S.hearSel = document.getElementById('hear-sel').innerText;
     if (S.step === 'experience') S.exp = collectExp();
     if (S.step === 'autofill' && !(S.afFiles || []).length) return;   // Workday wants the resume first
     const order = ['autofill', 'myinfo', 'experience', 'questions', 'voluntary', 'review'];

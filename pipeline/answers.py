@@ -75,6 +75,27 @@ def heard_from(job: dict | None) -> str:
     return "Company Website"   # Workday / Greenhouse / Lever feeds = the company's own career site
 
 
+def answer_variants(label: str, answer: str, job: dict | None = None) -> list[str]:
+    """Other wordings of the SAME answer, tried when a pick list doesn't use ours (Nov 24, Protiviti: no 'Company
+    Website' in its list). Only phrasing changes, never the fact: the company's own site stays the company's own site."""
+    out = [answer]
+    if SOURCE.search(norm(label)):
+        co = ((job or {}).get("company") or "").strip()
+        short = co.split()[0] if co else ""
+        if answer == "Company Website":
+            out += ["Company Career Site", "Company Careers Site", "Career Site", "Careers Site", "Careers Website",
+                    "Career Website", "Corporate Website", "Company Website/Career Site", "Our Website", "Our Career Site"]
+            out += [f"{x} {y}" for x in (co, short) if x for y in ("Website", "Career Site", "Careers", "Careers Website", ".com")]
+            out += [f"{short}.com"] if short else []
+        elif answer in ("LinkedIn", "Indeed", "Glassdoor", "ZipRecruiter", "Handshake"):
+            out += [f"{answer} Job Posting", f"{answer} Job Board", f"Job Board - {answer}", f"Social Media - {answer}"]
+    seen, res = set(), []
+    for x in out:
+        if x and x.lower() not in seen:
+            seen.add(x.lower()); res.append(x)
+    return res
+
+
 def seed_rules(job: dict | None = None) -> list[tuple[str, str]]:
     """(regex on the normalized label, answer). First match wins. Only facts from master_profile + config."""
     c, e = PROFILE.get("candidate", {}), PROFILE.get("education", {})

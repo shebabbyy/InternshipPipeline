@@ -180,6 +180,8 @@ try:
         _d = _S["data"]
         check("browser phase2: walks Apply -> account -> pages -> stops at Review", _out == "review" and _S["step"] == "review", _out)
         check("browser phase2: never submitted", not _S["submitted"])
+        check("browser phase2: how-did-you-hear list without 'Company Website' -> the company's own career-site wording (Nov 24 Protiviti)",
+              "Career Site" in str(_S.get("hearSel") or ""), str(_S.get("hearSel")))
         check("browser phase2: invisible reCAPTCHA badge + hidden challenge frame are not a CAPTCHA pause (Nov 23)",
               not any("CAPTCHA" in s_[0] for s_ in _seen), str([s_[0] for s_ in _seen]))
         check("browser phase2: Workday's empty noCaptchaWrapper is not a CAPTCHA; the bot-trap field stays empty (Nov 23)",
