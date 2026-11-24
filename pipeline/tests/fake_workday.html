@@ -90,7 +90,9 @@ function render() {
       <button data-automation-id="createAccountSubmitButton">Create Account</button>`;
   if (st === 'myinfo') root.innerHTML = text('first', 'First Name', 1) + text('last', 'Last Name', 1) +
       text('addr', 'Address Line 1', 1) + text('city', 'City', 1) + text('zip', 'Postal Code', 1) +
-      dd('country', 'Country', ['United States of America', 'Canada'], 1) + text('phone', 'Phone Number', 1) +
+      dd('country', 'Country', ['United States of America', 'Canada'], 1) +
+      dd('state', 'State', ['Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut','Delaware','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa','Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan','Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire','New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota','Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia','Wisconsin','Wyoming'], 1) +
+      text('phone', 'Phone Number', 1) +
       dd('dtype', 'Phone Device Type', ['Landline', 'Mobile'], 1) +
       radios('prev', 'Have you previously worked for Tokio Marine HCC?', ['Yes', 'No'], 1) +
       ms('hear', 'How Did You Hear About Us?', ['Job Board', 'Tokio Marine HCC Career Site', 'Employee Referral'], 1) +
@@ -142,7 +144,9 @@ document.addEventListener('click', ev => {
     S.step = S.start === 'autofillWithResume' ? 'autofill' : 'myinfo'; render(); }
   else if (t.getAttribute && t.getAttribute('aria-haspopup') === 'listbox') {
     lb.dataset.ms = '';
-    lb.innerHTML = t.dataset.opts.split('|').map(o => `<div role="option">${o}</div>`).join(''); lb.hidden = false; lb.dataset.for = t.id; }
+    const all = t.dataset.opts.split('|');     // like Workday: a long list only draws its first 10 rows until you type
+    lb.innerHTML = all.slice(0, 10).map(o => `<div role="option">${o}</div>`).join(''); lb.hidden = false; lb.dataset.for = t.id;
+    lb.dataset.all = all.join('|'); lb.dataset.typed = ''; }
   else if (t.getAttribute && t.getAttribute('role') === 'option') {
     document.getElementById(lb.dataset.for).textContent = t.textContent; lb.hidden = true; }
   else if (t.id === 'next') {
@@ -165,6 +169,13 @@ document.addEventListener('change', ev => {       // like Workday: each upload i
   if (t.id !== 'cv') return;
   S.cvFiles = (S.cvFiles || []).concat([...t.files].map(f => f.name));
   document.getElementById('cv-list').innerHTML = S.cvFiles.map(n => `<div data-automation-id="fileName">${n}</div>`).join('');
+});
+document.addEventListener('keydown', ev => {     // dropdown type-ahead: jump to the typed option
+  const lb = document.getElementById('lb');
+  if (lb.hidden || lb.dataset.ms || !lb.dataset.all || ev.key.length !== 1) return;
+  lb.dataset.typed = (lb.dataset.typed || '') + ev.key.toLowerCase();
+  const all = lb.dataset.all.split('|'), i = Math.max(0, all.findIndex(o => o.toLowerCase().startsWith(lb.dataset.typed)));
+  lb.innerHTML = all.slice(i, i + 10).map(o => `<div role="option">${o}</div>`).join('');
 });
 document.addEventListener('keydown', ev => {     // multiselect: type, press Enter, pick from the prompt list
   const t = ev.target; if (ev.key !== 'Enter' || !t.dataset || !t.dataset.ms) return;

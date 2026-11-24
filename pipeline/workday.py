@@ -582,10 +582,20 @@ class WorkdayFiller:
                 self.page.keyboard.press("Escape")      # Nov 24 (Protiviti): an open pick list above stole the options
                 self.page.wait_for_timeout(300)
                 self.click(w.locator('button[aria-haspopup="listbox"]').first)
-                opts = self.page.locator('[role="listbox"]:visible [role="option"]:visible')
+                self.page.wait_for_timeout(700)
+                # the open list only: chosen items of other questions are also role=option (Nov 24, Protiviti)
+                act = self.page.locator('[data-automation-id="activeListContainer"] [role="option"]:visible')
+                opts = act if act.count() else self.page.locator(
+                    '[role="listbox"]:visible [role="option"]:visible:not([data-automation-id="selectedItem"])')
                 opts.first.wait_for(state="visible", timeout=5000)
                 texts = [t.strip() for t in opts.all_inner_texts()]
                 choice = ab.pick_option(answer, texts)
+                if choice is None and answer:
+                    # long lists (50 states) are only partly drawn: type to jump to the option, then read again
+                    self.page.keyboard.type(answer[:12], delay=60)
+                    self.page.wait_for_timeout(900)
+                    texts = [t.strip() for t in opts.all_inner_texts()]
+                    choice = ab.pick_option(answer, texts)
                 if choice is None:
                     self.page.keyboard.press("Escape")
                     return False
@@ -818,7 +828,8 @@ class WorkdayFiller:
                 box.fill("")
                 aw.safe_click(box, self.page, timeout=3000)
             self.page.wait_for_timeout(1200)
-            opts = self.page.locator('[role="listbox"]:visible [role="option"]:visible, [data-automation-id="promptOption"]:visible')
+            act = self.page.locator('[data-automation-id="activeListContainer"] [role="option"]:visible')
+            opts = act if act.count() else self.page.locator('[role="listbox"]:visible [role="option"]:visible, [data-automation-id="promptOption"]:visible')
             texts = [t.strip() for t in opts.all_inner_texts() if t.strip()][:40] if opts.count() else []
             self.page.keyboard.press("Escape")
             return texts
