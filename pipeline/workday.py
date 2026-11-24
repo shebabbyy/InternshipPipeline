@@ -144,6 +144,24 @@ DEBUG_JS = """() => {
 }"""
 
 
+def _dump_lists(page, label: str) -> None:
+    """Read-only: what the open pick lists look like (for fixing selectors from a live page)."""
+    import json
+    from common import ROOT
+    try:
+        data = page.evaluate("""() => [...document.querySelectorAll('[role=listbox], [data-automation-id*=List], [data-automation-id*=popup i]')]
+          .filter(e => e.getBoundingClientRect().height > 0).slice(0, 6).map(e => ({
+            aid: e.getAttribute('data-automation-id') || '', role: e.getAttribute('role') || '', id: e.id || '',
+            n_opts: e.querySelectorAll('[role=option]').length,
+            html: e.outerHTML.slice(0, 2500)}))""")
+        focus = page.evaluate("() => { const a = document.activeElement; return a ? a.outerHTML.slice(0, 400) : '' }")
+        out = ROOT / "output" / "_debug"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "dropdown_dump.json").write_text(json.dumps({"label": label, "focus": focus, "lists": data}, indent=1), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def debug_dump(page, tag: str = "pause") -> None:
     """Writes output/_debug/<tag>_dump.json (+ .png). Never clicks or types."""
     import json
@@ -597,6 +615,7 @@ class WorkdayFiller:
                     texts = [t.strip() for t in opts.all_inner_texts()]
                     choice = ab.pick_option(answer, texts)
                 if choice is None:
+                    _dump_lists(self.page, f["label"])
                     self.page.keyboard.press("Escape")
                     return False
                 self.click(opts.nth(texts.index(choice)))
