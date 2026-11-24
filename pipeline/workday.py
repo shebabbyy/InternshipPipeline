@@ -917,7 +917,10 @@ class WorkdayFiller:
                 aw.safe_click(box, self.page, timeout=3000)
             self.page.wait_for_timeout(1200)
             act = self.page.locator('[data-automation-id="activeListContainer"] [role="option"]:visible')
-            opts = act if act.count() else self.page.locator('[role="listbox"]:visible [role="option"]:visible, [data-automation-id="promptOption"]:visible')
+            # only the open list; Workday's inline "Suggested" skills are role=option too (Nov 24, Protiviti)
+            opts = act if act.count() else self.page.locator(
+                '[role="listbox"]:visible [role="option"]:visible:not([data-automation-id="selectedItem"])' if f["kind"] == "dropdown"
+                else '[data-automation-id="promptOption"]:visible')
             texts = [t.strip() for t in opts.all_inner_texts() if t.strip()][:40] if opts.count() else []
             self.page.keyboard.press("Escape")
             return texts
