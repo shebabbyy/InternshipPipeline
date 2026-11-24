@@ -71,7 +71,8 @@ SCAN_JS = """() => {
       value = [...(c ? c.querySelectorAll('[class*=single-value], [class*=multi-value__label]') : [])].map(txt).join('; ');
     }
     if (el.readOnly && kind !== 'combobox') continue;
-    out.push({idx, label: labelOf(el), kind, value: (value || '').trim(), options,
+    out.push({idx, label: labelOf(el), kind, value: (value || '').trim(), options, id: el.id || '',
+              edu: /^(school|degree|discipline|start-month|start-year|end-month|end-year)--\\d+$/.test(el.id || ''),
               required: el.required || el.getAttribute('aria-required') === 'true'});
   }
   return out.map(f => {
@@ -122,15 +123,45 @@ class FormFiller:
             return [], opts
         return texts, opts
 
+    @staticmethod
+    def _pick(answer: str, options: list[str]):
+        """pick_option, plus: a two-value answer ("Finance, Accounting") on a one-pick list takes the first value
+        that matches an option exactly (both are true; nothing is guessed)."""
+        choice = ab.pick_option(answer, options)
+        if choice is None and "," in answer:
+            low = {o.strip().lower(): o for o in options}
+            for part in (x.strip() for x in answer.split(",")):
+                if part.lower() in low:
+                    return low[part.lower()]
+        return choice
+
+    def read_options(self, f: dict) -> list[str]:
+        """Opens a combobox just to list its choices for the Paused card, then closes it. Selects nothing."""
+        try:
+            self._click(self.loc(f).first)
+            self.page.wait_for_timeout(700)
+            texts, _ = self._options()
+            self.page.keyboard.press("Escape")
+            return texts[:40]
+        except aw.GuardError:
+            raise
+        except Exception:  # noqa: BLE001
+            return []
+
     def fill_field(self, f: dict, answer: str) -> bool:
         kind = f["kind"]
         try:
             if kind in ("text", "textarea"):
                 box = self.loc(f).first
-                box.fill(answer)
+                try:
+                    box.fill(answer)
+                except Exception:  # noqa: BLE001  (masked phone boxes refuse fill(): click and type instead)
+                    self._click(box)
+                    self.page.keyboard.press("Control+A")
+                    self.page.keyboard.type(answer, delay=40)
                 box.press("Tab")
             elif kind == "select":
-                choice = ab.pick_option(answer, f["options"])
+                choice = self._pick(answer, f["options"])
                 if choice is None:
                     return False
                 self.loc(f).first.select_option(label=choice)
@@ -139,12 +170,12 @@ class FormFiller:
                 self._click(box)
                 self.page.wait_for_timeout(700)
                 texts, opts = self._options()
-                choice = ab.pick_option(answer, texts)
+                choice = self._pick(answer, texts)
                 if choice is None:                      # async list (school, city): type to search
                     box.fill(answer if answer != "decline" else "")
                     self.page.wait_for_timeout(1800)
                     texts, opts = self._options()
-                    choice = ab.pick_option(answer, texts)
+                    choice = self._pick(answer, texts)
                 if choice is None:
                     box.fill("")
                     self.page.keyboard.press("Escape")
@@ -153,7 +184,7 @@ class FormFiller:
                 self._click(vis[texts.index(choice)])
                 answer = choice
             elif kind in ("radio", "checkgroup"):
-                choice = ab.pick_option(answer, f["options"])
+                choice = self._pick(answer, f["options"])
                 if choice is None:
                     return False
                 self._click(self.loc(f).nth(f["options"].index(choice)))
@@ -162,14 +193,18 @@ class FormFiller:
                 return False
         except aw.GuardError:
             raise
-        except Exception:  # noqa: BLE001  (unexpected widget: leave it for him)
+        except Exception as exc:  # noqa: BLE001  (unexpected widget: leave it for him)
+            print(f"  (couldn't fill '{f['label'][:50]}': {exc.__class__.__name__}: {str(exc).splitlines()[0][:120]})", flush=True)
             return False
         self.filled[f["label"]] = answer
         self.page.wait_for_timeout(250)
         return True
 
     def _item(self, f, cat, note=""):
-        return {"label": f["label"], "kind": f["kind"], "options": f.get("options") or [], "category": cat,
+        opts = f.get("options") or []
+        if not opts and f["kind"] == "combobox" and cat != "never":
+            opts = self.read_options(f)          # so the Paused card shows the real choices
+        return {"label": f["label"], "kind": f["kind"], "options": opts, "category": cat,
                 "note": note, "idx": f["idx"]}
 
     def fill_all(self) -> list[dict]:
@@ -177,7 +212,20 @@ class FormFiller:
         for f in self.scan():
             if f["value"]:
                 continue
-            cat, ans = ab.classify(f["label"], f["kind"], self.job)
+            label = f["label"]
+            if f.get("edu"):   # Greenhouse education block: "End date month/year" = graduation (Nov 24, CRA)
+                m = re.match(r"^(start|end)-(month|year)--\d+$", f.get("id", ""))
+                if m and m.group(1) == "end":
+                    label = "graduation " + m.group(2)
+                elif m and m.group(2) == "year":
+                    start = str((ab.PROFILE.get("education") or {}).get("start", ""))
+                    yr = re.search(r"20\d\d", start)
+                    if yr and not f["value"]:
+                        if not self.fill_field(f, yr.group(0)) and f["required"]:
+                            pending.append(self._item(f, "unknown"))
+                        continue
+                    label = f["label"]
+            cat, ans = ab.classify(label, f["kind"], self.job)
             if f["kind"] == "checkbox" and cat not in ("never",):
                 cat = "never" if f["required"] else cat      # a lone box is a consent / opt-in box: his
             if cat == "eeo":

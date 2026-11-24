@@ -10,7 +10,9 @@
 <div class="field-wrapper"><label for="email" class="label">Email<span>*</span></label><input id="email" type="email" aria-required="true"></div>
 <div class="field-wrapper"><label for="phone" class="label">Phone</label><input id="phone" type="tel"></div>
 <div class="field-wrapper"><label for="q_li" class="label">LinkedIn Profile</label><input id="q_li"></div>
-<input type="file" id="resume" style="display:none"><input type="file" id="cover_letter" style="display:none">
+<div class="field-wrapper" id="resume-wrap"><label class="label">Resume/CV*</label><input type="file" id="resume" style="display:none"></div>
+<div class="field-wrapper"><label class="label">Cover Letter</label><input type="file" id="cover_letter" style="display:none"></div>
+<div class="field-wrapper"><label for="question_9" class="label">Unofficial transcript</label><input type="file" id="question_9" style="display:none"></div>
 <div id="combos"></div>
 <div class="field-wrapper"><label for="q_gpa" class="label">What is your current GPA?*</label><input id="q_gpa" aria-required="true"></div>
 <div class="field-wrapper"><label for="q_pref" class="label">Practice Preference #1*</label>
@@ -60,6 +62,12 @@ document.addEventListener('click', ev => {
     document.getElementById(id + '-vc').innerHTML = `<div class="select__single-value">${t.textContent}</div>`;
     document.getElementById(id).value = ''; m.hidden = true; return; }
   if (t.id === 'submit') S.submitted = true;
+});
+S.files = {};
+document.addEventListener('change', ev => {          // Greenhouse swaps the resume box for 'Remove file' after an upload
+  const t = ev.target; if (t.type !== 'file') return;
+  S.files[t.id] = [...t.files].map(f => f.name);
+  if (t.id === 'resume') document.getElementById('resume-wrap').innerHTML = '<label class="label">Resume/CV*</label><span>' + t.files[0].name + '</span><button type="button">Remove file</button>';
 });
 document.addEventListener('input', ev => { if (ev.target.getAttribute('role') === 'combobox') openMenu(ev.target); });
 window.collect = () => {

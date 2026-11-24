@@ -102,14 +102,16 @@ def seed_rules(job: dict | None = None) -> list[tuple[str, str]]:
         (r"^(state|state/province|province|region)$", "Texas"),
         (r"^(postal|zip)( code)?$|^zip/postal code$", zip_m.group(1) if zip_m else ""),
         (r"linkedin", c.get("linkedin", "")),
-        (r"(legally )?(authori[sz]ed|eligible|permitted) to work", sa.get("authorized_to_work_us", "")),
+        (r"(legally )?(authori[sz]ed|eligible|permitted) to work|^work (eligibility|authori[sz]ation)( status)?$", sa.get("authorized_to_work_us", "")),
         (r"sponsor|visa (status|support)|work permit", sa.get("requires_sponsorship", "")),
         (r"(at least|over|older than) (the age of )?18|18 years", yes),
         (r"relocat", no),                                         # Houston only (decided)
         (r"(work|commute|located|live|reside|based) (in|at|near|from) .*houston|houston .*(office|location)", yes),
         (r"(in[- ]office|on[- ]site|onsite|hybrid|in person)", yes),
+        (r"(come|go|be|work|report) in(to)? (the |their |our |your |a )?(designated |local )?office|office \d|\d days (a|per) week", yes),
         (r"(previously|ever|formerly|currently) (worked|employed|been employed)|former (employee|worker)|"
          r"current or former|previous worker", yes if worked_there else no),
+        (r"^(expected |anticipated )?graduation month$", (re.search(r"[A-Za-z]+", grad) or [""])[0] if grad else ""),
         (r"(expected |anticipated )?graduation (date|month)|when (do|will) you graduate|degree completion date", grad),
         (r"graduation year|year of graduation|class of", year),
         (r"\bgpa\b|grade point", e.get("gpa", "")),

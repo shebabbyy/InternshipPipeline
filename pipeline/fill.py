@@ -96,15 +96,53 @@ def fill_greenhouse_lever(page, job: dict) -> int:
          ("LinkedIn Profile", "LinkedIn URL", "LinkedIn")),
     ]
     filled = sum(try_fill(page, sels, val, labels) for sels, val, labels in fields)
-    files = [f for f in (best_file(job["resume"]), best_file(job["cover"])) if f]
-    try:
-        uploads = page.locator("input[type=file]")
-        for i in range(min(uploads.count(), len(files))):
-            uploads.nth(i).set_input_files(files[i])
-            filled += 1
-    except Exception:  # noqa: BLE001
-        pass
+    filled += upload_files(page, best_file(job["resume"]), best_file(job["cover"]))
     return filled
+
+
+# Nov 24 (CRA live run): uploading by position put the cover letter into a different file question, because
+# Greenhouse re-renders the resume box after an upload. Each file now goes only to the box meant for it.
+_FILE_BOX_JS = """(kind) => {
+  const want = kind === 'resume' ? /\\b(resume|r\u00e9sum\u00e9|cv)\\b/i : /cover[\\s_-]*letter/i;
+  const other = kind === 'resume' ? /cover[\\s_-]*letter|transcript|writing sample|portfolio/i : /resume|transcript|writing sample|portfolio|\\bcv\\b/i;
+  const boxes = [...document.querySelectorAll('input[type=file]')];
+  const named = boxes.filter(b => want.test((b.id || '') + ' ' + (b.name || '')) && !other.test((b.id || '') + ' ' + (b.name || '')));
+  let pick = named[0];
+  if (!pick) {
+    for (const b of boxes) {
+      const wrap = b.closest('.field-wrapper, .field, fieldset, .application-question, [class*=upload], div');
+      let t = '', n = wrap;
+      for (let i = 0; n && i < 4 && t.length < 400; i++, n = n.parentElement) t = (n.innerText || '').slice(0, 400);
+      const lab = (b.labels && b.labels[0] ? b.labels[0].innerText : '') + ' ' + (b.getAttribute('aria-label') || '');
+      const head = (lab + ' ' + t).slice(0, 200);
+      if (want.test(head) && !other.test(head.split(/\\n/)[0])) { pick = b; break; }
+    }
+  }
+  if (!pick && kind === 'resume' && boxes.length === 1) pick = boxes[0];
+  if (!pick) return null;
+  document.querySelectorAll('[data-pipeline-file]').forEach(e => e.removeAttribute('data-pipeline-file'));
+  pick.setAttribute('data-pipeline-file', kind);
+  return pick.files && pick.files.length ? 'has' : 'ok';
+}"""
+
+
+def upload_files(page, resume, cover) -> int:
+    """Resume into the resume box, cover letter into the cover-letter box; never into other file questions."""
+    n = 0
+    for kind, path in (("resume", resume), ("cover", cover)):
+        if not path:
+            continue
+        try:
+            state = page.evaluate(_FILE_BOX_JS, kind)
+            if state == "ok":
+                page.locator(f'input[type=file][data-pipeline-file="{kind}"]').set_input_files(path)
+                page.wait_for_timeout(1500)
+                n += 1
+            elif state is None:
+                log(f"  {kind} upload: no {kind} box found on this form (left for you)")
+        except Exception as exc:  # noqa: BLE001
+            log(f"  {kind} upload failed ({exc.__class__.__name__})")
+    return n
 
 
 SUBMIT_NAMES = re.compile(r"^\s*(submit|submit application|submit my application|send application|apply|finish)\s*$", re.I)

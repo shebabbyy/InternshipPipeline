@@ -28,6 +28,14 @@ try:
         _pg = _b.new_page()
         _pg.goto((IP / "pipeline" / "tests" / "fake_greenhouse.html").resolve().as_uri())
         _pg.fill("#first_name", "Shehab"); _pg.fill("#last_name", "Moqbel"); _pg.fill("#email", "x@y.com")
+        import fill as _fill
+        _tmpd = _P(_tf.mkdtemp())
+        (_tmpd / "resume.pdf").write_bytes(b"%PDF-1.4"); (_tmpd / "cover.pdf").write_bytes(b"%PDF-1.4")
+        _nup = _fill.upload_files(_pg, str(_tmpd / "resume.pdf"), str(_tmpd / "cover.pdf"))
+        _fs = _pg.evaluate("S.files")
+        check("browser forms: resume -> resume box, cover letter -> cover-letter box, other file questions untouched "
+              "(even though the resume box is replaced after its upload; Nov 24 CRA bug)",
+              _nup == 2 and _fs.get("resume") == ["resume.pdf"] and _fs.get("cover_letter") == ["cover.pdf"] and not _fs.get("question_9"), str(_fs))
         _out, _filled, _left = fq.fill(_pg, _job, on_pause=_him, wait_minutes=0.2)
         _d = _pg.evaluate("collect()")
         _P_ = _common.PROFILE
@@ -81,3 +89,16 @@ check("gemini: a round where every model is only busy (503) reports 'overloaded'
 _src_c = (IP / "pipeline" / "common.py").read_text(encoding="utf-8")
 check("gemini: busy rounds come from config (gemini_overload_rounds / gemini_overload_wait_s)",
       "gemini_overload_rounds" in _src_c and "gemini_overload_wait_s" in _src_c)
+
+# ---------------- Nov 24: answers learned from the live CRA form
+_j = {"company": "Charles River Associates", "title": "Analyst Intern", "source": "linkedin", "notes": ""}
+_grad = (_common.PROFILE.get("education") or {}).get("graduation", "")
+check("answers: 'come into the office 3-4 days per week?' -> Yes (in-office is OK)",
+      ab.classify("CRA asks colleagues to work in their designated office 3-4 days per week on average. Are you available to come into the office 3-4 days per week?", "combobox", _j) == ("seed", "Yes"))
+check("answers: Greenhouse education 'graduation month' -> the month only; 'graduation year' -> the year",
+      ab.classify("graduation month", "combobox", _j)[1] in _grad and ab.classify("graduation month", "combobox", _j)[1].isalpha()
+      and ab.classify("graduation year", "text", _j)[1] in _grad, str((_grad, ab.classify("graduation month", "combobox", _j))))
+check("answers: 'Work Eligibility' -> work authorization answer", ab.classify("Work Eligibility", "combobox", _j)[0] == "seed")
+check("forms: two majors on a one-pick list -> the first exact match; nothing else guessed",
+      fq.FormFiller._pick("Finance, Accounting", ["Accounting", "Economics", "Finance"]) == "Finance"
+      and fq.FormFiller._pick("Finance, Accounting", ["Business", "Economics"]) is None)
