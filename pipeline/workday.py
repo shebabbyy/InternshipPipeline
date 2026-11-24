@@ -663,7 +663,14 @@ class WorkdayFiller:
                 return False
         except aw.GuardError:
             raise
-        except Exception:  # noqa: BLE001  (unexpected widget: leave it for him)
+        except Exception as exc:  # noqa: BLE001  (unexpected widget: leave it for him)
+            print(f"  (couldn't fill '{f['label'][:50]}' [{kind}]: {exc.__class__.__name__}: {str(exc).splitlines()[0][:140]})", flush=True)
+            if kind in ("dropdown", "multiselect"):
+                _dump_lists(self.page, f["label"])
+            try:
+                self.page.keyboard.press("Escape")
+            except Exception:  # noqa: BLE001
+                pass
             return False
         self.filled[f["label"]] = answer
         self.nap(0.6)
