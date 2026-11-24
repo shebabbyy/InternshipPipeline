@@ -648,15 +648,29 @@ class WorkdayFiller:
                     raise
                 except Exception:  # noqa: BLE001  (Workday hides the real input under a styled circle)
                     aw.safe_click(target, self.page, force=True)
-                self.page.wait_for_timeout(300)
-                if kind == "radio" and not target.evaluate("e => e.checked || e.getAttribute('aria-checked') === 'true'"):
-                    # Nov 24 (Protiviti): a forced click on the hidden input didn't register; click its label
-                    rid = target.get_attribute("id") or ""
-                    lab = w.locator(f'label[for="{rid}"]') if rid else w.locator("label").filter(has_text=choice)
+                self.page.wait_for_timeout(400)
+                if kind == "radio" and not self._radio_set(f["label"]):
+                    # Nov 24 (Protiviti): the click didn't register. Try its label, then the keyboard (Space).
+                    self._dump_wrap(f)
+                    rid = None
+                    try:
+                        rid = target.get_attribute("id", timeout=2000)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    lab = self.page.locator(f'label[for="{rid}"]') if rid else w.locator("label").filter(has_text=choice)
                     if lab.count():
-                        aw.safe_click(lab.first, self.page, timeout=3000)
-                        self.page.wait_for_timeout(300)
-                    if not target.evaluate("e => e.checked || e.getAttribute('aria-checked') === 'true'"):
+                        try:
+                            aw.safe_click(lab.first, self.page, timeout=3000)
+                        except aw.GuardError:
+                            raise
+                        except Exception:  # noqa: BLE001
+                            pass
+                        self.page.wait_for_timeout(400)
+                    if not self._radio_set(f["label"]) and rid:
+                        self.page.locator(f'[id="{rid}"]').focus()
+                        self.page.keyboard.press("Space")
+                        self.page.wait_for_timeout(400)
+                    if not self._radio_set(f["label"]):
                         raise RuntimeError("radio didn't stay selected")
             elif kind == "multiselect":
                 box = w.locator('input').first
@@ -868,6 +882,27 @@ class WorkdayFiller:
                                                 if cands is None else f"{where}: pick it on the page"))
             elif not ok:
                 self.skipped.append(f"{where}: {f['label']}")
+
+    def _radio_set(self, label: str) -> bool:
+        """Fresh scan (the group may have been re-drawn): does that question now have a value?"""
+        try:
+            for g in self.page.evaluate(SCAN_JS, {}):
+                if g["label"] == label:
+                    return bool(g["value"])
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+    def _dump_wrap(self, f) -> None:
+        """Read-only: the field's HTML, for fixing selectors from a live page."""
+        try:
+            from common import ROOT
+            html = self.wrap(f).first.evaluate("e => e.outerHTML.slice(0, 6000)", timeout=3000)
+            out = ROOT / "output" / "_debug"
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "field_dump.html").write_text(html, encoding="utf-8")
+        except Exception:  # noqa: BLE001
+            pass
 
     def read_prompt_options(self, f) -> list[str]:
         """Open a Workday pick list just to read its choices for the Paused card (selects nothing)."""
