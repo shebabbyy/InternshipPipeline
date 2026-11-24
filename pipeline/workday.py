@@ -579,8 +579,10 @@ class WorkdayFiller:
                 box.fill(answer)
                 box.press("Tab")
             elif kind == "dropdown":
+                self.page.keyboard.press("Escape")      # Nov 24 (Protiviti): an open pick list above stole the options
+                self.page.wait_for_timeout(300)
                 self.click(w.locator('button[aria-haspopup="listbox"]').first)
-                opts = self.page.locator('[role="listbox"] [role="option"], [data-automation-id="promptOption"]')
+                opts = self.page.locator('[role="listbox"]:visible [role="option"]:visible')
                 opts.first.wait_for(state="visible", timeout=5000)
                 texts = [t.strip() for t in opts.all_inner_texts()]
                 choice = ab.pick_option(answer, texts)
@@ -617,6 +619,9 @@ class WorkdayFiller:
                     self.page.keyboard.press("Escape")
                     return False
                 self.click(opts.nth(texts.index(choice)))
+                self.page.wait_for_timeout(500)
+                self.page.keyboard.press("Escape")       # Workday keeps a multiselect list open after a pick
+                self.page.wait_for_timeout(300)
             elif kind == "date":
                 mm, yy = _month_year(answer)
                 if not yy:
@@ -805,11 +810,15 @@ class WorkdayFiller:
         """Open a Workday pick list just to read its choices for the Paused card (selects nothing)."""
         try:
             w = self.wrap(f)
-            box = w.locator('input').first
-            box.fill("")
-            aw.safe_click(box, self.page, timeout=3000)
+            self.page.keyboard.press("Escape")
+            if f["kind"] == "dropdown":
+                aw.safe_click(w.locator('button[aria-haspopup="listbox"]').first, self.page, timeout=3000)
+            else:
+                box = w.locator('input').first
+                box.fill("")
+                aw.safe_click(box, self.page, timeout=3000)
             self.page.wait_for_timeout(1200)
-            opts = self.page.locator('[data-automation-id="promptOption"], [role="listbox"] [role="option"]')
+            opts = self.page.locator('[role="listbox"]:visible [role="option"]:visible, [data-automation-id="promptOption"]:visible')
             texts = [t.strip() for t in opts.all_inner_texts() if t.strip()][:40] if opts.count() else []
             self.page.keyboard.press("Escape")
             return texts
