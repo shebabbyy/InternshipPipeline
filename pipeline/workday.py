@@ -599,12 +599,29 @@ class WorkdayFiller:
             elif kind == "dropdown":
                 self.page.keyboard.press("Escape")      # Nov 24 (Protiviti): an open pick list above stole the options
                 self.page.wait_for_timeout(300)
-                self.click(w.locator('button[aria-haspopup="listbox"]').first)
-                self.page.wait_for_timeout(700)
+                btn = w.locator('button[aria-haspopup="listbox"]').first
+                self.click(btn)
+                self.page.wait_for_timeout(900)
                 # the open list only: chosen items of other questions are also role=option (Nov 24, Protiviti)
-                act = self.page.locator('[data-automation-id="activeListContainer"] [role="option"]:visible')
-                opts = act if act.count() else self.page.locator(
-                    '[role="listbox"]:visible [role="option"]:visible:not([data-automation-id="selectedItem"])')
+                sel = ('[data-automation-id="activeListContainer"] [role="option"]:visible, '
+                       '[role="listbox"]:visible [role="option"]:visible:not([data-automation-id="selectedItem"])')
+                opts = self.page.locator(sel)
+                if not opts.count():                         # Nov 24 (Protiviti State): click focused it, list stayed shut
+                    btn.focus()
+                    self.page.keyboard.press("ArrowDown")
+                    self.page.wait_for_timeout(900)
+                if not opts.count():                         # last try: type-ahead on the closed button itself
+                    btn.focus()
+                    self.page.keyboard.type(answer[:12], delay=80)
+                    self.page.wait_for_timeout(1000)
+                    shown = (btn.inner_text() or "").strip()
+                    if not opts.count():
+                        if shown and ab.pick_option(answer, [shown]) == shown:
+                            answer = shown
+                            self.filled[f["label"]] = answer
+                            self.nap(0.6)
+                            return True
+                        raise RuntimeError(f"list didn't open (button shows '{shown[:40]}')")
                 opts.first.wait_for(state="visible", timeout=5000)
                 texts = [t.strip() for t in opts.all_inner_texts()]
                 choice = ab.pick_option(answer, texts)
