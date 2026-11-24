@@ -648,6 +648,16 @@ class WorkdayFiller:
                     raise
                 except Exception:  # noqa: BLE001  (Workday hides the real input under a styled circle)
                     aw.safe_click(target, self.page, force=True)
+                self.page.wait_for_timeout(300)
+                if kind == "radio" and not target.evaluate("e => e.checked || e.getAttribute('aria-checked') === 'true'"):
+                    # Nov 24 (Protiviti): a forced click on the hidden input didn't register; click its label
+                    rid = target.get_attribute("id") or ""
+                    lab = w.locator(f'label[for="{rid}"]') if rid else w.locator("label").filter(has_text=choice)
+                    if lab.count():
+                        aw.safe_click(lab.first, self.page, timeout=3000)
+                        self.page.wait_for_timeout(300)
+                    if not target.evaluate("e => e.checked || e.getAttribute('aria-checked') === 'true'"):
+                        raise RuntimeError("radio didn't stay selected")
             elif kind == "multiselect":
                 box = w.locator('input').first
                 opts = self.page.locator('[data-automation-id="promptOption"], [role="listbox"] [role="option"]')
