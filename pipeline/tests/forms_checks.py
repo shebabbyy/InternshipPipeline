@@ -42,6 +42,8 @@ try:
         check("browser forms: comboboxes / radios / text answered from the bank, how-did-you-hear = real source",
               _d["auth"] == "Yes" and _d["spon"] == "No" and _d["hear"] == "LinkedIn" and _d["gpa"] == _P_["education"]["gpa"]
               and _d["q18"] == "y" and _d["reloc"] == "No", str(_d))
+        check("browser forms: phone filled even though choosing the country re-draws the phone box (Nov 24 CRA)",
+              _d["country"] == "United States" and _d["phone"] and _d["phone"][-4:] == _re.sub(r"\D", "", _P_["candidate"]["phone"])[-4:], str(_d))
         check("browser forms: async search boxes (city, school) typed and picked",
               _d["loc"] == "Houston, Texas, United States" and _d["school"] == "University of Houston", str(_d))
         check("browser forms: demographics declined", _d["gender"] == "Decline To Self Identify" and _d["vet"] == "I don't wish to answer", str(_d))

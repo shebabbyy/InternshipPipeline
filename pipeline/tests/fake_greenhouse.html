@@ -8,7 +8,8 @@
 <div class="field-wrapper"><label for="first_name" class="label">First Name<span>*</span></label><input id="first_name" aria-required="true"></div>
 <div class="field-wrapper"><label for="last_name" class="label">Last Name<span>*</span></label><input id="last_name" aria-required="true"></div>
 <div class="field-wrapper"><label for="email" class="label">Email<span>*</span></label><input id="email" type="email" aria-required="true"></div>
-<div class="field-wrapper"><label for="phone" class="label">Phone</label><input id="phone" type="tel"></div>
+<div id="country-slot"></div>
+<div class="field-wrapper" id="phone-wrap"><label for="phone" class="label">Phone*</label><input id="phone" type="tel" aria-required="true"></div>
 <div class="field-wrapper"><label for="q_li" class="label">LinkedIn Profile</label><input id="q_li"></div>
 <div class="field-wrapper" id="resume-wrap"><label class="label">Resume/CV*</label><input type="file" id="resume" style="display:none"></div>
 <div class="field-wrapper"><label class="label">Cover Letter</label><input type="file" id="cover_letter" style="display:none"></div>
@@ -35,6 +36,7 @@ const combo = (id, label, opts, req) => `<div class="select__container"><label i
   <div class="select-shell"><div class="select__control"><div class="select__value-container" id="${id}-vc"></div>
   <input id="${id}" role="combobox" aria-labelledby="${id}-label" ${req ? 'aria-required="true"' : ''} data-opts="${opts.join('|')}" autocomplete="off"></div>
   <div class="select__menu" id="${id}-menu" hidden></div></div></div>`;
+document.getElementById('country-slot').innerHTML = combo('country', 'Country', ['Canada', 'United States', 'United Kingdom'], 1);
 document.getElementById('combos').innerHTML =
   combo('q_auth', 'Are you legally authorized to work in the United States?', ['Yes', 'No'], 1) +
   combo('q_spon', 'Will you now or in the future require sponsorship?', ['Yes', 'No'], 1) +
@@ -60,7 +62,10 @@ document.addEventListener('click', ev => {
   if (t.getAttribute('role') === 'option') {
     const m = t.closest('.select__menu'), id = m.dataset.for;
     document.getElementById(id + '-vc').innerHTML = `<div class="select__single-value">${t.textContent}</div>`;
-    document.getElementById(id).value = ''; m.hidden = true; return; }
+    document.getElementById(id).value = ''; m.hidden = true;
+    if (id === 'country') {   // like Greenhouse: picking the country re-draws the phone box (old element gone)
+      document.getElementById('phone-wrap').innerHTML = '<label for="phone" class="label">Phone*</label><input id="phone" type="tel" aria-required="true">'; }
+    return; }
   if (t.id === 'submit') S.submitted = true;
 });
 S.files = {};
@@ -76,7 +81,7 @@ window.collect = () => {
   return {auth: v('q_auth'), spon: v('q_spon'), hear: v('q_hear'), loc: v('q_loc'), school: v('q_school'), off: v('q_off'),
           gender: v('gender'), vet: v('veteran_status'), gpa: document.getElementById('q_gpa').value,
           pref: document.getElementById('q_pref').value, why: document.getElementById('q_why').value,
-          q18: r('q18'), reloc: r('reloc'), cert: document.getElementById('q_cert').checked,
+          country: v('country'), phone: document.getElementById('phone').value, q18: r('q18'), reloc: r('reloc'), cert: document.getElementById('q_cert').checked,
           offices: [...document.querySelectorAll('fieldset input[type=checkbox]:checked')].length};
 };
 </script></body></html>

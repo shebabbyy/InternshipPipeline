@@ -154,12 +154,12 @@ class FormFiller:
             if kind in ("text", "textarea"):
                 box = self.loc(f).first
                 try:
-                    box.fill(answer)
+                    box.fill(answer, timeout=5000)
                 except Exception:  # noqa: BLE001  (masked phone boxes refuse fill(): click and type instead)
                     self._click(box)
                     self.page.keyboard.press("Control+A")
                     self.page.keyboard.type(answer, delay=40)
-                box.press("Tab")
+                box.press("Tab", timeout=5000)
             elif kind == "select":
                 choice = self._pick(answer, f["options"])
                 if choice is None:
@@ -207,10 +207,27 @@ class FormFiller:
         return {"label": f["label"], "kind": f["kind"], "options": opts, "category": cat,
                 "note": note, "idx": f["idx"]}
 
+    def _fresh(self, key):
+        """Re-scan and return the field (label, kind, n-th of that label). Answering one question can re-draw others
+        (Nov 24, CRA: choosing the country re-draws the phone box), so tags from an earlier scan can't be trusted."""
+        seen = {}
+        for g in self.scan():
+            k = (g["label"], g["kind"])
+            seen[k] = seen.get(k, 0) + 1
+            if (k[0], k[1], seen[k]) == key:
+                return g
+        return None
+
     def fill_all(self) -> list[dict]:
         pending = []
-        for f in self.scan():
-            if f["value"]:
+        keys, seen = [], {}
+        for g in self.scan():
+            k = (g["label"], g["kind"])
+            seen[k] = seen.get(k, 0) + 1
+            keys.append((k[0], k[1], seen[k]))
+        for key in keys:
+            f = self._fresh(key)
+            if f is None or f["value"]:
                 continue
             label = f["label"]
             if f.get("edu"):   # Greenhouse education block: "End date month/year" = graduation (Nov 24, CRA)
