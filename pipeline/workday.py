@@ -97,7 +97,7 @@ STATE_JS = """() => {
   const captchaFrame = f => { const src = ((f.src || '') + ' ' + (f.title || '')).toLowerCase();
     if (!/recaptcha|hcaptcha|turnstile|arkose|funcaptcha|captcha/.test(src)) return false;
     if (/size=invisible/.test(src)) return false;                      // the corner badge, never a challenge
-    if (/recaptcha\/(api2|enterprise)\/bframe|challenge/.test(src)) { const r = f.getBoundingClientRect(); return shown(f) && r.width > 150 && r.height > 150; }
+    if (/recaptcha\\/(api2|enterprise)\\/bframe|challenge/.test(src)) { const r = f.getBoundingClientRect(); return shown(f) && r.width > 150 && r.height > 150; }
     return shown(f); };
   const frames = [...document.querySelectorAll('iframe')].some(captchaFrame);
   const errs = q('[data-automation-id="errorMessage"], [data-automation-id="inputAlert"], [role=alert]').map(txt).filter(Boolean);

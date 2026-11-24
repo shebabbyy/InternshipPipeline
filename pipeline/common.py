@@ -426,6 +426,27 @@ def gemini_json(prompt: str, retries: int = 3):
     client = genai.Client(api_key=key)
     models = [m for m in (CONFIG.get("gemini_model"), CONFIG.get("gemini_fallback_model")) if m]
     last = None
+    # Nov 24: a morning-wide 503 ("high demand") left the day's jobs unscored. When every model is only overloaded,
+    # wait and go round again (the daily scan runs hidden, so waiting a few minutes costs nothing).
+    rounds = 1 + int(CONFIG.get("gemini_overload_rounds", 2))
+    for rnd in range(rounds):
+        overloaded = True
+        if rnd:
+            pause = int(CONFIG.get("gemini_overload_wait_s", 300))
+            log(f"Gemini: every model is busy (503); trying again in {pause // 60} min (round {rnd + 1} of {rounds}).")
+            time.sleep(pause)
+        out = _gemini_round(client, types, models, prompt, retries)
+        if out[0]:
+            return out[1]
+        last, overloaded = out[1], out[2]
+        if not overloaded:
+            break
+    raise RuntimeError(f"Gemini failed: {str(last)[:200]}")
+
+
+def _gemini_round(client, types, models, prompt, retries):
+    """One pass over the models. Returns (True, result) or (False, last_error, only_overloaded)."""
+    last, overloaded = None, True
     for model in models:
         extra = {} if model.lower().startswith("gemma") else {"response_mime_type": "application/json"}  # Gemma has no JSON mode
         for attempt in range(retries):
@@ -434,10 +455,12 @@ def gemini_json(prompt: str, retries: int = 3):
                     model=model, contents=prompt,
                     config=types.GenerateContentConfig(temperature=0.1, **extra),
                 )
-                return parse_json(resp.text)
+                return True, parse_json(resp.text)
             except Exception as exc:  # noqa: BLE001
                 last = exc
                 msg = str(exc)
+                if not any(s in msg for s in ("503", "UNAVAILABLE", "overloaded", "high demand")):
+                    overloaded = False
                 if any(s in msg for s in ("NOT_FOUND", "404", "API key not valid", "API_KEY_INVALID", "PERMISSION_DENIED", "401", "403")):
                     log(f"Gemini {model}: {msg[:140]} (not retrying; check the model name in config.yaml or the key in .env)")
                     break
@@ -445,4 +468,4 @@ def gemini_json(prompt: str, retries: int = 3):
                     wait = 20 * (attempt + 1)
                     log(f"Gemini {model} error ({exc.__class__.__name__}: {msg[:100]}); retry in {wait}s")
                     time.sleep(wait)
-    raise RuntimeError(f"Gemini failed: {str(last)[:200]}")
+    return False, last, overloaded

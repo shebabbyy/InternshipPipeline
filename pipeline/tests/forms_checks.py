@@ -45,3 +45,39 @@ try:
         _b.close()
 except ImportError:
     print("SKIP browser forms (Playwright not installed)")
+
+# ---------------- Nov 24: code hygiene + Gemini busy retry
+import warnings as _w, types as _T
+_bad = []
+for _f in sorted((IP / "pipeline").glob("*.py")):
+    try:
+        with _w.catch_warnings():
+            _w.simplefilter("error")
+            compile(_f.read_text(encoding="utf-8"), str(_f), "exec")
+    except (SyntaxError, SyntaxWarning, DeprecationWarning) as _e:
+        _bad.append(f"{_f.name}: {_e}")
+check("hygiene: every pipeline .py compiles with warnings as errors (no invalid escapes in embedded JS)", not _bad, str(_bad))
+_calls = []
+class _C:
+    class models:
+        @staticmethod
+        def generate_content(model, contents, config):
+            _calls.append(model)
+            if len(_calls) < 7:
+                raise Exception("503 UNAVAILABLE This model is currently experiencing high demand")
+            return _T.SimpleNamespace(text='{"ok": 1}')
+class _Ty:
+    @staticmethod
+    def GenerateContentConfig(**k): return k
+_sl = _common.time.sleep
+_common.time.sleep = lambda s: None
+try:
+    _r1 = _common._gemini_round(_C, _Ty, ["a", "b"], "p", 3)
+    _r2 = _common._gemini_round(_C, _Ty, ["a", "b"], "p", 3)
+finally:
+    _common.time.sleep = _sl
+check("gemini: a round where every model is only busy (503) reports 'overloaded' so the caller waits and retries; the next round succeeds",
+      _r1[0] is False and _r1[2] is True and _r2 == (True, {"ok": 1}), str((_r1, _r2)))
+_src_c = (IP / "pipeline" / "common.py").read_text(encoding="utf-8")
+check("gemini: busy rounds come from config (gemini_overload_rounds / gemini_overload_wait_s)",
+      "gemini_overload_rounds" in _src_c and "gemini_overload_wait_s" in _src_c)

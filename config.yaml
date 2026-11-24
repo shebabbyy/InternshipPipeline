@@ -113,6 +113,8 @@ password_style: unique   # "default" (one password everywhere) is NOT recommende
 # ---- Gemini free tier (model names change; check aistudio.google.com) ----
 gemini_model: "gemini-3.1-flash-lite"
 gemini_fallback_model: "gemma-4-31b-it"
+gemini_overload_rounds: 2     # Nov 24: when Gemini is only busy (503), wait and try again this many more times
+gemini_overload_wait_s: 300   # seconds between those rounds
 gemini_batch_size: 25
 
 # ---- Google Sheet (your tracker) ----
