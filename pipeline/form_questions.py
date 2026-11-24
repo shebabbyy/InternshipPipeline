@@ -41,7 +41,18 @@ SCAN_JS = """() => {
   const ctrls = [...scope.querySelectorAll('input, select, textarea')].filter(e => !e.closest('#pipeline-banner'));
   for (const el of ctrls) {
     const type = (el.type || '').toLowerCase();
-    if (['hidden', 'file', 'submit', 'button', 'search', 'password', 'image', 'reset'].includes(type)) continue;
+    if (type === 'file') {   // Nov 24: extra upload questions (transcript, writing sample) are listed for him, never filled
+      if (el.files && el.files.length) continue;
+      if (/resume|\\bcv\\b|cover[\\s_-]*letter/i.test((el.id || '') + ' ' + (el.name || ''))) continue;
+      const w = el.closest('.field-wrapper, .application-question, fieldset, .field') || el.parentElement;
+      const lab = txt(w && w.querySelector('label.label, .label, legend, .application-label, label'));
+      if (!lab || /^attach$/i.test(lab) || /resume|\\bcv\\b|cover\\s*letter/i.test(lab)) continue;
+      const idx = String(n++); el.setAttribute('data-pipeline-q', idx);
+      out.push({idx, label: lab, kind: 'file', value: '', options: [], id: el.id || '', edu: false,
+                required: /[*✱]/.test(lab) || el.required || el.getAttribute('aria-required') === 'true'});
+      continue;
+    }
+    if (['hidden', 'submit', 'button', 'search', 'password', 'image', 'reset'].includes(type)) continue;
     if (/beecatcher|honeypot|hp_|bot_?trap/i.test((el.getAttribute('data-automation-id') || '') + ' ' + el.id + ' ' + el.name)) continue;
     if (type === 'radio' || type === 'checkbox') {
       if (!vis(el) && !vis(el.closest('label')) && !vis(el.parentElement)) continue;
@@ -204,7 +215,8 @@ class FormFiller:
         opts = f.get("options") or []
         if not opts and f["kind"] == "combobox" and cat != "never":
             opts = self.read_options(f)          # so the Paused card shows the real choices
-        return {"label": f["label"], "kind": f["kind"], "options": opts, "category": cat,
+        kind = "dropdown" if f["kind"] in ("select", "combobox") else f["kind"]   # the Paused card shows a pick list
+        return {"label": f["label"], "kind": kind, "options": opts, "category": cat,
                 "note": note, "idx": f["idx"]}
 
     def _fresh(self, key):
@@ -242,6 +254,12 @@ class FormFiller:
                             pending.append(self._item(f, "unknown"))
                         continue
                     label = f["label"]
+            if f["kind"] == "file":
+                if f["required"]:
+                    pending.append(self._item(f, "never", "upload this file yourself (only the resume and cover letter are attached automatically)"))
+                else:
+                    self.skipped.append(f["label"])
+                continue
             cat, ans = ab.classify(label, f["kind"], self.job)
             if f["kind"] == "checkbox" and cat not in ("never",):
                 cat = "never" if f["required"] else cat      # a lone box is a consent / opt-in box: his

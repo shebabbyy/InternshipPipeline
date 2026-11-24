@@ -22,6 +22,7 @@ try:
         ab.queue_answer("Practice Preference #1", "Finance & Damages")
         ab.queue_answer("Location preference #1", "Houston")
         ff.page.check("#q_cert")                   # the certify box is his
+        ff.page.set_input_files("#question_9", str(_tmpd / "resume.pdf"))   # so is the transcript upload
         ab.queue_answer("", cont=True)
     with _sp() as _p:
         _b = _p.chromium.launch(headless=True)
@@ -48,7 +49,7 @@ try:
               _d["loc"] == "Houston, Texas, United States" and _d["school"] == "University of Houston", str(_d))
         check("browser forms: demographics declined", _d["gender"] == "Decline To Self Identify" and _d["vet"] == "I don't wish to answer", str(_d))
         check("browser forms: unknown required questions + certify box paused for him; his Control Center answers filled",
-              _seen and set(_seen[0]) == {"Practice Preference #1", "Location preference #1", "I certify that the information above is true"}
+              _seen and set(_seen[0]) == {"Practice Preference #1", "Location preference #1", "I certify that the information above is true", "Unofficial transcript"}
               and _d["pref"] == "Finance & Damages" and _d["off"] == "Houston" and _out == "ready", str((_seen, _d, _out, _left)))
         check("browser forms: optional essay + optional checkboxes left blank, never submitted",
               _d["why"] == "" and _d["offices"] == 0 and not _pg.evaluate("S.submitted"), str(_d))
