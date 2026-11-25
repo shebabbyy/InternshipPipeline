@@ -126,9 +126,14 @@ _FILE_BOX_JS = """(kind) => {
 }"""
 
 
+UPLOADS: dict = {}   # last upload_files result: wanted / done (verification record)
+
+
 def upload_files(page, resume, cover) -> int:
     """Resume into the resume box, cover letter into the cover-letter box; never into other file questions."""
     n = 0
+    UPLOADS.clear()
+    UPLOADS.update(wanted=sum(1 for x in (resume, cover) if x), done=0)
     for kind, path in (("resume", resume), ("cover", cover)):
         if not path:
             continue
@@ -138,6 +143,8 @@ def upload_files(page, resume, cover) -> int:
                 page.locator(f'input[type=file][data-pipeline-file="{kind}"]').set_input_files(path)
                 page.wait_for_timeout(1500)
                 n += 1
+            if state in ("ok", "has"):
+                UPLOADS["done"] = UPLOADS.get("done", 0) + 1
             elif state is None:
                 log(f"  {kind} upload: no {kind} box found on this form (left for you)")
         except Exception as exc:  # noqa: BLE001
@@ -485,6 +492,18 @@ def run(limit: int = 6, job_id: str | None = None) -> int:
                         if n and gh_left else
                         f"Auto-filled {n} fields. Review, answer any custom questions, then Submit." if n else
                         f"{hint or aw.BANNERS[kind]} Answers to paste: {sheet.name}.")
+            try:   # Nov 24: remember whether this job's run was clean (Control Center: Apply vs Not verified)
+                import verified
+                if use_wd:
+                    verified.record(job, "workday", outcome, outcome == "review")
+                elif kind == "greenhouse_lever":
+                    import form_questions as _fq
+                    clean = gh_left is not None and not _fq.LAST.get("failed")
+                    files_ok = bool(UPLOADS) and UPLOADS.get("done", 0) >= UPLOADS.get("wanted", 1)
+                    verified.record(job, verified.ats_key(page.url), "ready" if clean else f"left: {len(gh_left or [])}"
+                                    + (f" (failed: {', '.join(_fq.LAST.get('failed') or [])[:80]})" if _fq.LAST.get("failed") else ""), files_ok)
+            except Exception:  # noqa: BLE001
+                pass
             mark_dirty(conn, job["id"], status="FILLED", notes=note)
             log(f"  {job['company']}: {note}")
             custom = hint if kind not in ("workday", "greenhouse_lever") else None

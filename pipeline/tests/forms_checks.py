@@ -105,3 +105,31 @@ check("answers: 'Work Eligibility' -> work authorization answer", ab.classify("W
 check("forms: two majors on a one-pick list -> the first exact match; nothing else guessed",
       fq.FormFiller._pick("Finance, Accounting", ["Accounting", "Economics", "Finance"]) == "Finance"
       and fq.FormFiller._pick("Finance, Accounting", ["Business", "Economics"]) is None)
+
+# ---------------- Nov 24: verified vs not verified (Apply tab only lists verified applications)
+import verified as _vf, json as _json
+_vf.RESULTS = _P(_tf.mkdtemp()) / "_apply_results.json"
+_save_cfg = _common.CONFIG.get("verified_ats")
+_common.CONFIG["verified_ats"] = ["greenhouse"]
+try:
+    _gh = {"id": "v1", "company": "A", "title": "T", "url": "https://job-boards.greenhouse.io/a/jobs/1"}
+    _wd = {"id": "v2", "company": "B", "title": "T", "url": "https://b.wd1.myworkdayjobs.com/x/job/1"}
+    _ic = {"id": "v3", "company": "C", "title": "T", "url": "https://careers-c.icims.com/jobs/1"}
+    check("verified: Greenhouse (verified_ats) -> Apply tab; Workday / other ATS -> Not verified, with a reason",
+          _vf.status(_gh)[0] and not _vf.status(_wd)[0] and not _vf.status(_ic)[0]
+          and _vf.status(_wd)[1] == "workday" and "Simplify" in _vf.status(_ic)[2], str((_vf.status(_wd), _vf.status(_ic))))
+    _vf.record(_wd, "workday", "stopped: no Next button", False)
+    check("verified: a failed test run keeps the job on Not verified (and says why)",
+          not _vf.status(_wd)[0] and "no Next button" in _vf.status(_wd)[2])
+    _vf.record(_wd, "workday", "review", True)
+    _ok, _other = _vf.split([_gh, _wd, _ic])
+    check("verified: a clean run on that job (Review reached, files attached) moves just that job to the Apply tab",
+          [j["id"] for j in _ok] == ["v1", "v2"] and [j["id"] for j in _other] == ["v3"])
+    _vf.record(_ic, "other_ats", "ready", False)
+    check("verified: a run without both files attached never counts as verified", not _vf.status(_ic)[0])
+finally:
+    _common.CONFIG["verified_ats"] = _save_cfg
+_ccs = (IP / "control_center.py").read_text(encoding="utf-8")
+check("verified wiring: Apply list = verified jobs only; Not verified tab with test run / Simplify / submitted / skip",
+      "verified.split(job_rows(\"Ready to apply\"))" in _ccs and 'ui.tab("Not verified"' in _ccs and "unver_open" in _ccs
+      and "verified.record(" in (IP / "pipeline" / "fill.py").read_text(encoding="utf-8"))

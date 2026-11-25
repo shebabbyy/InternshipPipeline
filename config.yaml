@@ -139,6 +139,9 @@ cdp_port: 9222
 # Fills Workday applications from master_profile.json + answers.yaml and stops at Review. Never submits.
 # Account: unique password per Workday site in Windows Credential Manager, email = your Gmail (all jobs).
 workday_autofill: true
+verified_ats: [greenhouse]   # Nov 24: application systems live-tested end to end; their jobs show on the Apply tab.
+                             # Others go to "Not verified" (add workday after 3 clean runs to Review). A single job
+                             # also counts as verified after its own clean run (output/_apply_results.json).
 workday_start: manual        # Nov 24: manual = "Apply Manually" (My Experience filled from your verified profile). resume = "Autofill with Resume": Workday's resume reader made half-empty job entries with wrong dates + unlisted "suggested" skills on Protiviti
 workday_wait_minutes: 20     # how long a pause (question / terms box / CAPTCHA / verify email) waits for you
 workday_pace_s: [0.6, 1.4]   # human-paced delay between actions

@@ -42,6 +42,7 @@ from common import CONFIG, DB_PATH, LOCK_PATH, STATUSES, lock_info, pid_alive  #
 import prospects  # noqa: E402  (read-only ranking from prospects.yaml + pipeline.db)
 import answers  # noqa: E402  (phase 2: Workday questions waiting for you; answers go to an inbox file, never the DB)
 import resolver  # noqa: E402  (phase 3: reads output/_resolved_links.json only; lookups run as a subprocess)
+import verified  # noqa: E402  (Nov 24: which ready jobs the auto-apply is verified on; reads output/_apply_results.json)
 
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW (Windows): child scripts never open a console
 
@@ -686,6 +687,7 @@ def index() -> None:
         t_jobs = ui.tab("Jobs", icon="work")
         t_docs = ui.tab("Documents", icon="description")
         t_apply = ui.tab("Apply", icon="send")
+        t_unver = ui.tab("Not verified", icon="help_outline")
         t_net = ui.tab("Network", icon="groups")
     selected: dict = {}
     contact_sel: dict = {}
@@ -815,6 +817,9 @@ def index() -> None:
                 ui.label("You click Submit yourself. Nothing on this page submits or sends anything.").classes("text-lg font-bold text-amber-900")
                 ui.label("Open the application, review every field, click Submit in that window, close the window, then press "
                          "I submitted it (or Not yet / Skip).").classes("text-sm")
+            ui.label("Only applications the auto-apply is verified on are listed here: every question it can answer gets "
+                     "filled and your resume + cover letter go into their own boxes. The rest are on the Not verified tab."
+                     ).classes("text-sm text-gray-700")
             simplify_note = ui.label("").classes("text-sm")
             apply_pick = ui.select({}, label="Application", on_change=lambda e: show_apply(e.value)).classes("w-[40rem]")
             apply_info = ui.label("").classes("text-sm text-gray-700 whitespace-pre-wrap")
@@ -837,6 +842,36 @@ def index() -> None:
                         "Tell the paused Workday fill to go on (e.g. after you clicked the email verification link).")
             ui.label("Fill sheet (answers ready to paste)").classes("text-lg font-semibold mt-2")
             fill_view = ui.label("").classes("whitespace-pre-wrap font-mono text-xs bg-gray-50 p-2 rounded w-full")
+
+        # ---------------- Not verified (Nov 24): ready jobs whose application system isn't verified yet
+        with ui.tab_panel(t_unver):
+            with ui.card().classes("w-full bg-gray-50 border border-gray-300"):
+                ui.label("Not verified yet: the auto-apply hasn't been proven on these application systems.").classes("text-lg font-bold")
+                ui.label("Apply by hand or with Simplify (Use Simplify instead), or press Open application as a test run: it never "
+                         "submits, and a clean run moves the job to the Apply tab. If a test run pauses, answer on the Apply tab."
+                         ).classes("text-sm")
+            unver_label = ui.label("Click a row to pick a job.").classes("text-sm text-gray-600")
+            unver_grid = ui.aggrid({
+                "columnDefs": [
+                    {"field": "score", "headerName": "Score", "width": 90},
+                    {"field": "company", "headerName": "Company", "filter": True},
+                    {"field": "title", "headerName": "Role", "flex": 2, "filter": True},
+                    {"field": "ats", "headerName": "System", "width": 120, "filter": True},
+                    {"field": "why", "headerName": "Why it's here", "flex": 3, "tooltipField": "why"},
+                ],
+                "rowData": [],
+                "defaultColDef": {"resizable": True, "sortable": True},
+            }).classes("w-full h-[26rem]")
+            unver_sel: dict = {}
+            unver_grid.on("cellClicked", lambda e: pick_unver((e.args or {}).get("data") or {}))
+            with ui.row().classes("gap-2"):
+                u_open = ui.button("Open application (test run)", icon="science", on_click=lambda: unver_open()).props("outline")
+                u_open.tooltip("Fills what it safely can, never submits. A clean run (questions + both files) verifies this job.")
+                ui.button("Use Simplify instead", icon="extension", on_click=lambda: unver_simplify()).props("outline")
+                u_done = ui.button("I submitted it", icon="task_alt", color="positive",
+                                   on_click=lambda: unver_action("I submitted it", "--applied"))
+                u_skip = ui.button("Skip this job", icon="block", color="negative", on_click=lambda: unver_action("Skip", "--skip")).props("outline")
+                busy_buttons.extend([u_open, u_done, u_skip])
 
         # ---------------- Network
         with ui.tab_panel(t_net):
@@ -1343,7 +1378,8 @@ def index() -> None:
     def show_apply(jid) -> None:
         job = one_job(jid)
         if not job:
-            apply_info.text, fill_view.text = "Nothing waiting to apply. Run a scan, or Build packet on the Jobs tab.", ""
+            apply_info.text, fill_view.text = ("Nothing verified to apply right now. Other ready jobs are on the Not verified tab "
+                                               "(apply by hand / Simplify, or run a test)."), ""
             return
         apply_info.text = (f"{job['company']} | {job['title']} | score {job['score']} | {STATUSES.get(job['status'], job['status'])}"
                            + (f" | {job['notes']}" if job.get("notes") else "") + link_line(job))
@@ -1404,6 +1440,33 @@ def index() -> None:
         else:
             ui.notify("Opened in your normal Chrome. Come back and press I submitted it when you're done.")
 
+    def pick_unver(row: dict) -> None:
+        unver_sel.clear()
+        unver_sel.update(row or {})
+        unver_label.text = (f"Picked: {row.get('company')} | {row.get('title')}" + link_line(row)) if row else "Click a row to pick a job."
+
+    def unver_open() -> None:
+        jid = unver_sel.get("id")
+        if not jid:
+            ui.notify("Pick a job first.", type="warning")
+            return
+        run_job(f"Open application (test run): {unver_sel.get('company', '')}",
+                ["pipeline/fill.py", "--job", jid, "--limit", "1"], {"PIPELINE_GUI": "1"})
+
+    def unver_simplify() -> None:
+        job = one_job(unver_sel.get("id"))
+        if not job or not open_in_chrome(resolver.target(job)[0]):
+            ui.notify("Pick a job with a link first.", type="warning")
+        else:
+            ui.notify("Opened in your normal Chrome. Come back and press I submitted it when you're done.")
+
+    def unver_action(label: str, flag: str) -> None:
+        jid = unver_sel.get("id")
+        if jid:
+            run_job(f"{label}: {unver_sel.get('company', '')}", ["pipeline/jobctl.py", flag, jid])
+        else:
+            ui.notify("Pick a job first.", type="warning")
+
     def apply_action(label: str, flag: str) -> None:
         jid = apply_pick.value
         if jid:
@@ -1418,7 +1481,11 @@ def index() -> None:
             pick(fresh or {})
         with_docs = {r["id"]: f"{r['company']} | {r['title']}" for r in job_rows("All") if r.get("resume")}
         doc_pick.set_options(with_docs, value=doc_pick.value if doc_pick.value in with_docs else None)
-        ready = {r["id"]: f"{r['company']} | {r['title']} ({r['score']})" for r in job_rows("Ready to apply")}
+        ok_rows, other_rows = verified.split(job_rows("Ready to apply"))
+        ready = {r["id"]: f"{r['company']} | {r['title']} ({r['score']})" for r in ok_rows}
+        unver_grid.options["rowData"] = [{k: r.get(k) for k in ("id", "company", "title", "score", "ats", "why", "url")}
+                                         for r in other_rows]
+        unver_grid.update()
         keep = apply_pick.value if apply_pick.value in ready else next(iter(ready), None)
         apply_pick.set_options(ready, value=keep)
         show_apply(keep)

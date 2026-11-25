@@ -109,6 +109,7 @@ class FormFiller:
         self.filled: dict = {}
         self.skipped: list = []
         self.left: list = []
+        self.failed: list = []       # answers the bank HAD but the form wouldn't take (a filler problem, not his)
 
     def scan(self) -> list[dict]:
         return self.page.evaluate(SCAN_JS)
@@ -268,6 +269,7 @@ class FormFiller:
                     pending.append(self._item(f, cat, "pick an answer (decline if offered)"))
             elif cat in ("seed", "learned") and f["kind"] != "checkbox":
                 if not self.fill_field(f, ans) and f["required"]:
+                    self.failed.append(f["label"])
                     pending.append(self._item(f, "unknown", f"couldn't match '{ans}' to the options"))
             elif f["required"]:
                 note = {"never": "yours to answer on the page", "essay": "essay: draft it with /answer in Claude"}.get(cat, "")
@@ -323,7 +325,13 @@ class FormFiller:
         return "ready" if not left else f"left: {len(left)}"
 
 
+LAST: dict = {}     # details of the last run (fill.py records verification from it)
+
+
 def fill(page, job: dict, on_pause=None, wait_minutes=None) -> tuple[str, dict, list]:
     ff = FormFiller(page, job, on_pause, wait_minutes)
     out = ff.run()
+    failed = [x for x in ff.failed if x in ff.left]      # still blank at the end
+    LAST.clear()
+    LAST.update(failed=failed, left=list(ff.left))
     return out, ff.filled, ff.left
