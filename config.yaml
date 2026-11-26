@@ -116,6 +116,8 @@ gemini_fallback_model: "gemma-4-31b-it"
 gemini_overload_rounds: 2     # Nov 24: when Gemini is only busy (503), wait and try again this many more times
 gemini_overload_wait_s: 300   # seconds between those rounds
 gemini_batch_size: 25
+gemini_answers: true          # Nov 26: Gemini answers questions the rules can't, on every Workday / Greenhouse / Lever form (fact names only, never your personal values; its picks show yellow on the Review check)
+gemini_answers_max_calls: 20  # per application
 
 # ---- Google Sheet (your tracker) ----
 sheet_name: "Shehab Internship Tracker"

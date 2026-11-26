@@ -19,6 +19,7 @@ import sys
 import time
 from urllib.parse import urlparse
 
+import ai_answers as ai
 import answers as ab
 import apply_window as aw
 import gmail_verify
@@ -588,6 +589,15 @@ class WorkdayFiller:
     def wrap(self, f):
         return self.page.locator(f'[data-pipeline-idx="{f["idx"]}"]')
 
+    def _choose(self, label: str, answer: str, options: list[str]):
+        """Literal match first; then Gemini picks among the SHOWN options (Nov 26). None = his to answer."""
+        choice = ab.pick_option(answer, options)
+        if choice is None and answer:
+            choice = ai.pick(label, answer, options)
+            if choice is not None:
+                ai.note(label, f"Gemini chose '{choice}' for the answer '{answer}'")
+        return choice
+
     def fill_field(self, f: dict, answer: str) -> bool:
         w, kind = self.wrap(f), f["kind"]
         try:
@@ -631,13 +641,15 @@ class WorkdayFiller:
                     self.page.wait_for_timeout(900)
                     texts = [t.strip() for t in opts.all_inner_texts()]
                     choice = ab.pick_option(answer, texts)
+                if choice is None and answer and answer != "decline":
+                    choice = self._choose(f["label"], answer, texts)
                 if choice is None:
                     _dump_lists(self.page, f["label"])
                     self.page.keyboard.press("Escape")
                     return False
                 self.click(opts.nth(texts.index(choice)))
             elif kind in ("radio", "checkgroup"):
-                choice = ab.pick_option(answer, f["options"])
+                choice = self._choose(f["label"], answer, f["options"]) if answer != "decline" else ab.pick_option(answer, f["options"])
                 if choice is None:
                     return False
                 sel = "input[type=radio]" if kind == "radio" else "input[type=checkbox], [role=checkbox]"
@@ -781,6 +793,10 @@ class WorkdayFiller:
         if not any(f["kind"] == "file" for f in fields):
             self.upload_loose(name)
         cover_field = any(f["kind"] == "file" and re.search(r"cover", ab.norm(f["label"])) for f in fields)
+        # Nov 26: every required question the rules can't answer goes to Gemini in one call as the page loads.
+        unknown = [f for f in fields if not f.get("exp") and f["kind"] != "file" and not f["value"] and f["required"]
+                   and ab.classify(f["label"], f["kind"], self.job)[0] == "unknown"]
+        solved = ai.solve(unknown, self.job) if unknown else {}
         for f in fields:
             if f.get("exp"):
                 continue        # My Experience entry fields: handled by fill_experience (never from the answer bank)
@@ -797,6 +813,13 @@ class WorkdayFiller:
             elif cat in ("seed", "learned"):
                 if not self.fill_field(f, ans) and f["required"]:
                     pending.append(self._item(f, "unknown", f"couldn't match '{ans}' to the options"))
+            elif cat == "unknown" and f["idx"] in solved:
+                g = solved[f["idx"]]
+                if self.fill_field(f, g["answer"]):
+                    ai.note(f["label"], f"Gemini: {g['key']}")
+                    print(f"  Gemini answered '{f['label'][:60]}' -> {g['key']}", flush=True)
+                elif f["required"]:
+                    pending.append(self._item(f, "unknown", f"couldn't match '{g['answer']}' to the options"))
             elif f["required"]:
                 note = {"never": "yours to answer on the page", "essay": "essay: draft it with /answer in Claude"}.get(cat, "")
                 pending.append(self._item(f, cat, note))
@@ -1007,6 +1030,7 @@ def fill(page, job: dict, password_fn, files: dict, on_pause=None) -> tuple[str,
         return "stopped: daily cap", {}
     daily_count(add=True)
     wf = WorkdayFiller(page, job, password_fn, files, on_pause)
+    ai.reset_calls(); ai.DECIDED.clear()
     outcome = wf.run()
     log(f"  {job['company']}: Workday filler {outcome}. Filled {len(wf.filled)} fields"
         + (f"; left {len(wf.skipped)} optional blank" if wf.skipped else "") + ".")

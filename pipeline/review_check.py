@@ -75,6 +75,14 @@ def _orgs():
     return {ab.norm(x.get("organization", "")) for x in PROFILE.get("experience", [])}
 
 
+def _ai_decided() -> dict:
+    try:
+        import ai_answers
+        return ai_answers.DECIDED
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def compare(pairs: list[dict], job: dict | None = None, filled: dict | None = None) -> list[dict]:
     """Pure function. pairs = [{section, label, value}]; filled = labels the code filled -> value."""
     filled = {ab.norm(k): v for k, v in (filled or {}).items()}
@@ -94,6 +102,8 @@ def compare(pairs: list[dict], job: dict | None = None, filled: dict | None = No
                 color, why = "red", "education start date is not in your profile (a parser/Simplify guess)"
             else:
                 color, why = ("green", "") if sy and sy in value else ("red", f"your start is {start}")
+        elif q in _ai_decided():
+            color, why = "yellow", _ai_decided()[q] + ": check it"     # Nov 26: Gemini's picks are never green
         elif cat in ("seed", "learned"):
             color, why = ("green", "") if values_match(value, exp) else ("red", f"expected {exp}")
         elif cat == "eeo":

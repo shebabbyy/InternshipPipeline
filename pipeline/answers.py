@@ -210,6 +210,89 @@ def take_inbox() -> tuple[dict, bool]:
     return got, bool(box.get("continue"))
 
 
+# ---------------------------------------------------------------- near-identical wording of a saved question
+_NEG = re.compile(r"\b(not|no|never|without|unable|cannot|can't|don't|won't|isn't|aren't)\b")
+_STOP = {"the", "a", "an", "you", "your", "are", "is", "do", "does", "will", "for", "this", "that", "to", "of", "in",
+         "at", "on", "with", "and", "or", "be", "able", "please", "what", "which", "our", "we", "us", "have", "has"}
+
+
+def _words(q: str) -> set:
+    return {w for w in q.split() if len(w) > 1 and w not in _STOP}
+
+
+def fuzzy_bank(q: str, bank: dict, threshold: float = 0.8) -> str | None:
+    """A saved question with (almost) the same wording: same meaningful words (Jaccard >= threshold), the same
+    negations and the same numbers. Deliberately strict: meaning-level matches are Gemini's job (ai_answers.py),
+    and its picks are shown yellow on the Review check. Returns the saved question, or None."""
+    if not q or NEVER.search(q) or EEO.search(q) or SOURCE.search(q):
+        return None
+    wq, nq, dq = _words(q), set(_NEG.findall(q)), set(re.findall(r"\d+", q))
+    if len(wq) < 2:
+        return None
+    best, best_s = None, 0.0
+    for k in bank:
+        wk = _words(k)
+        if not wk or set(_NEG.findall(k)) != nq or set(re.findall(r"\d+", k)) != dq:
+            continue
+        s_ = len(wq & wk) / len(wq | wk)
+        if s_ > best_s:
+            best, best_s = k, s_
+    return best if best_s >= threshold else None
+
+
+# ---------------------------------------------------------------- the fact sheet Gemini maps questions onto
+def facts(job: dict | None = None) -> list[dict]:
+    """Every fact the code may type, with a plain description. private=True: the VALUE is never sent to Gemini
+    (the free tier may use prompts for training); Gemini only names the key and the code fills the value in.
+    Only facts already used by seed_rules (master_profile + config), nothing new."""
+    c, e = PROFILE.get("candidate", {}), PROFILE.get("education", {})
+    sa = PROFILE.get("standard_answers", {})
+    first, last = _first_last()
+    loc = c.get("location", "")
+    zip_m = re.search(r"\b(\d{5})\b", loc)
+    grad = e.get("graduation") or sa.get("graduation_date", "")
+    year = (re.search(r"(20\d\d)", grad) or [""])[0] if grad else ""
+    month = (re.search(r"[A-Za-z]+", grad) or [""])[0] if grad else ""
+    company = norm((job or {}).get("company", ""))
+    worked_there = any(company and company in norm(x.get("organization", "")) for x in PROFILE.get("experience", []))
+    rows = [
+        ("first_name", "legal first name", first, True),
+        ("last_name", "legal last name", last, True),
+        ("full_name", "full legal name", " ".join(x for x in (first, last) if x), True),
+        ("email", "email address", account_email(), True),
+        ("phone", "phone number (10 digits)", re.sub(r"\D", "", c.get("phone", ""))[-10:], True),
+        ("linkedin", "LinkedIn profile URL", c.get("linkedin", ""), True),
+        ("zip_code", "home ZIP / postal code", zip_m.group(1) if zip_m else "", True),
+        ("city", "home city", "Houston", False),
+        ("state", "home state", "Texas", False),
+        ("country", "home country", "United States of America", False),
+        ("location", "current location (city, state)", "Houston, Texas", False),
+        ("work_authorized_us", "legally authorized to work in the United States", sa.get("authorized_to_work_us", ""), False),
+        ("requires_sponsorship", "will now or in the future require visa sponsorship to work in the US", sa.get("requires_sponsorship", ""), False),
+        ("age_18_plus", "is at least 18 years old", "Yes", False),
+        ("willing_to_relocate", "willing to relocate away from Houston", "No", False),
+        ("works_in_houston", "can work at / commute to an office in the Houston, TX area", "Yes", False),
+        ("in_office_ok", "willing to work in the office / on-site / hybrid (in Houston)", "Yes", False),
+        ("previously_worked_here", "has previously worked for or been employed by this company", "Yes" if worked_there else "No", False),
+        ("graduation_date", "expected graduation date (month year)", grad, False),
+        ("graduation_month", "expected graduation month", month, False),
+        ("graduation_year", "expected graduation year", year, False),
+        ("gpa", "cumulative GPA", e.get("gpa", ""), False),
+        ("majors", "declared major(s)", sa.get("majors", "").replace(";", ","), False),
+        ("degree", "degree being pursued", "Bachelor of Business Administration", False),
+        ("school", "university", "University of Houston", False),
+        ("currently_enrolled", "currently enrolled as a student", "Yes", False),
+        ("class_year", "class standing / year in school", sa.get("class_year", ""), False),
+        ("availability", "internship term he is available for", CONFIG.get("season", ""), False),
+        ("text_messages_opt_in", "agrees to receive text messages", "No", False),
+    ]
+    return [{"key": k, "desc": d, "value": str(v), "private": p} for k, d, v, p in rows if str(v).strip()]
+
+
+def is_yes_no(value: str) -> bool:
+    return norm(value) in ("yes", "no")
+
+
 # ---------------------------------------------------------------- classify one question
 def classify(label: str, kind: str = "text", job: dict | None = None) -> tuple[str, str]:
     """-> (category, answer). category: never | eeo | learned | seed | essay | unknown."""
@@ -229,8 +312,15 @@ def classify(label: str, kind: str = "text", job: dict | None = None) -> tuple[s
         return "unknown", ""   # "authorized without sponsorship?" vs "need sponsorship to stay authorized?": ask once
     for pat, ans in seed_rules(job):
         if re.search(pat, q):
+            if is_yes_no(ans) and _NEG.search(q):
+                # Nov 26: "able to work WITHOUT sponsorship?" made the sponsorship rule answer No. A negated yes/no
+                # question goes to Gemini (it reports reversed wording) or to him, never to a keyword rule.
+                return "unknown", ""
             return "seed", ans
-    if kind == "textarea" or ESSAY.search(q):
+    near = fuzzy_bank(q, bank)
+    if near is not None:
+        return "learned", bank[near]
+    if kind == "textarea" or (kind == "text" and ESSAY.search(q)):   # a pick list is never an essay ("Which best describes...")
         return "essay", ""
     return "unknown", ""
 

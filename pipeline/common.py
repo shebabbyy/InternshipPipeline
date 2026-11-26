@@ -410,7 +410,7 @@ def parse_json(text: str):
     return json.loads(match.group(1))
 
 
-def gemini_json(prompt: str, retries: int = 3):
+def gemini_json(prompt: str, retries: int = 3, patient: bool = True):
     """Call the Gemini free tier and parse JSON. NEVER pass personal info here:
     the free tier may use prompts for training/human review.
     Raises RuntimeError (and nothing else) when Gemini can't be used."""
@@ -428,7 +428,8 @@ def gemini_json(prompt: str, retries: int = 3):
     last = None
     # Nov 24: a morning-wide 503 ("high demand") left the day's jobs unscored. When every model is only overloaded,
     # wait and go round again (the daily scan runs hidden, so waiting a few minutes costs nothing).
-    rounds = 1 + int(CONFIG.get("gemini_overload_rounds", 2))
+    # patient=False (during an application, Nov 26): one quick pass, never a multi-minute wait.
+    rounds = 1 + int(CONFIG.get("gemini_overload_rounds", 2)) if patient else 1
     for rnd in range(rounds):
         overloaded = True
         if rnd:

@@ -408,4 +408,7 @@ exec(compile((IP / "pipeline" / "tests" / "phase4_checks.py").read_text(encoding
 # ---------------- Nov 23: Greenhouse / Lever custom questions
 exec(compile((IP / "pipeline" / "tests" / "forms_checks.py").read_text(encoding="utf-8"), "forms_checks.py", "exec"))
 
+# ---------------- Nov 26: Gemini answers layer (any Workday / Greenhouse form)
+exec(compile((IP / "pipeline" / "tests" / "ai_checks.py").read_text(encoding="utf-8"), "ai_checks.py", "exec"))
+
 print("\nFAILED: " + ", ".join(fails) if fails else "\nALL PASSED")

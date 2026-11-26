@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import time
 
+import ai_answers as ai
 import answers as ab
 import apply_window as aw
 from common import CONFIG
@@ -136,15 +137,20 @@ class FormFiller:
         return texts, opts
 
     @staticmethod
-    def _pick(answer: str, options: list[str]):
+    def _pick(answer: str, options: list[str], label: str = "", use_ai: bool = False):
         """pick_option, plus: a two-value answer ("Finance, Accounting") on a one-pick list takes the first value
-        that matches an option exactly (both are true; nothing is guessed)."""
+        that matches an option exactly (both are true; nothing is guessed). use_ai: last try, Gemini picks among the
+        shown options (Nov 26)."""
         choice = ab.pick_option(answer, options)
         if choice is None and "," in answer:
             low = {o.strip().lower(): o for o in options}
             for part in (x.strip() for x in answer.split(",")):
                 if part.lower() in low:
                     return low[part.lower()]
+        if choice is None and use_ai and label and answer and answer != "decline":
+            choice = ai.pick(label, answer, options)
+            if choice is not None:
+                ai.note(label, f"Gemini chose '{choice}' for the answer '{answer}'")
         return choice
 
     def read_options(self, f: dict) -> list[str]:
@@ -173,7 +179,7 @@ class FormFiller:
                     self.page.keyboard.type(answer, delay=40)
                 box.press("Tab", timeout=5000)
             elif kind == "select":
-                choice = self._pick(answer, f["options"])
+                choice = self._pick(answer, f["options"], f["label"], True)
                 if choice is None:
                     return False
                 self.loc(f).first.select_option(label=choice)
@@ -188,6 +194,11 @@ class FormFiller:
                     self.page.wait_for_timeout(1800)
                     texts, opts = self._options()
                     choice = self._pick(answer, texts)
+                if choice is None and answer != "decline":     # Nov 26: re-open the full list, Gemini picks from it
+                    box.fill("")
+                    self.page.wait_for_timeout(600)
+                    texts, opts = self._options()
+                    choice = self._pick(answer, texts, f["label"], True)
                 if choice is None:
                     box.fill("")
                     self.page.keyboard.press("Escape")
@@ -196,7 +207,7 @@ class FormFiller:
                 self._click(vis[texts.index(choice)])
                 answer = choice
             elif kind in ("radio", "checkgroup"):
-                choice = self._pick(answer, f["options"])
+                choice = self._pick(answer, f["options"], f["label"], True)
                 if choice is None:
                     return False
                 self._click(self.loc(f).nth(f["options"].index(choice)))
@@ -234,10 +245,15 @@ class FormFiller:
     def fill_all(self) -> list[dict]:
         pending = []
         keys, seen = [], {}
-        for g in self.scan():
+        first = self.scan()
+        for g in first:
             k = (g["label"], g["kind"])
             seen[k] = seen.get(k, 0) + 1
             keys.append((k[0], k[1], seen[k]))
+        # Nov 26: required questions the rules can't answer go to Gemini in one call (by label: fields re-draw)
+        unk = [dict(g, idx=g["label"]) for g in first if g.get("required") and not g.get("value") and g["kind"] not in ("file", "checkbox")
+               and not g.get("edu") and ab.classify(g["label"], g["kind"], self.job)[0] == "unknown"]
+        solved = ai.solve(unk, self.job) if unk else {}
         for key in keys:
             f = self._fresh(key)
             if f is None or f["value"]:
@@ -271,6 +287,13 @@ class FormFiller:
                 if not self.fill_field(f, ans) and f["required"]:
                     self.failed.append(f["label"])
                     pending.append(self._item(f, "unknown", f"couldn't match '{ans}' to the options"))
+            elif cat == "unknown" and label in solved and f["kind"] != "checkbox":
+                g = solved[label]
+                if self.fill_field(f, g["answer"]):
+                    ai.note(label, f"Gemini: {g['key']}")
+                    print(f"  Gemini answered '{label[:60]}' -> {g['key']}", flush=True)
+                elif f["required"]:
+                    pending.append(self._item(f, "unknown", f"couldn't match '{g['answer']}' to the options"))
             elif f["required"]:
                 note = {"never": "yours to answer on the page", "essay": "essay: draft it with /answer in Claude"}.get(cat, "")
                 pending.append(self._item(f, cat, note))
@@ -330,6 +353,7 @@ LAST: dict = {}     # details of the last run (fill.py records verification from
 
 def fill(page, job: dict, on_pause=None, wait_minutes=None) -> tuple[str, dict, list]:
     ff = FormFiller(page, job, on_pause, wait_minutes)
+    ai.reset_calls(); ai.DECIDED.clear()
     out = ff.run()
     failed = [x for x in ff.failed if x in ff.left]      # still blank at the end
     LAST.clear()
