@@ -374,7 +374,14 @@ class WorkdayFiller:
         return None
 
     def click(self, loc):
-        aw.safe_click(loc, self.page)
+        # Nov 26 (Shell): Workday lays a transparent 'click_filter' div over some buttons (Create Account); a normal
+        # click then waits forever for the button to be 'clickable'. Short wait, then a forced click (same guard).
+        try:
+            aw.safe_click(loc, self.page, timeout=6000)
+        except aw.GuardError:
+            raise
+        except Exception:  # noqa: BLE001
+            aw.safe_click(loc, self.page, force=True)
         self.nap()
 
     # ------------------------------------------------ pause (he takes over one step)

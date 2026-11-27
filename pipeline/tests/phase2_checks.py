@@ -122,7 +122,8 @@ for _f in ("workday.py", "review_check.py", "answers.py", "gmail_verify.py"):
 _wsrc = (IP / "pipeline" / "workday.py").read_text(encoding="utf-8")
 check("phase2 static: Workday filler never ticks boxes or presses keys to submit",
       ".check(" not in _wsrc and ".set_checked(" not in _wsrc and "keyboard.press(\"Enter\")" not in _wsrc
-      and "    def click(self, loc):\n        aw.safe_click(loc, self.page)" in _wsrc)
+      and _re.search(r"    def click\(self, loc\):\n(?:        #.*\n)*        try:\n            aw\.safe_click\(loc, self\.page, timeout=6000\)\n"
+                     r"        except aw\.GuardError:\n            raise\n        except Exception:.*\n            aw\.safe_click\(loc, self\.page, force=True\)", _wsrc))
 _fsrc = (IP / "pipeline" / "fill.py").read_text(encoding="utf-8")
 check("phase2 safety: Workday auto-fill only runs in real Chrome (never the Playwright fallback window)",
       "if use_wd and not (sess.cdp or headless):" in _fsrc)

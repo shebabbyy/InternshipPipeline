@@ -87,7 +87,8 @@ function render() {
   if (st === 'auth') root.innerHTML = `<input data-automation-id="email" type="email"><input data-automation-id="password" type="password">
       <input data-automation-id="verifyPassword" type="password">
       <label><input type="checkbox" data-automation-id="createAccountCheckbox" id="terms"> I agree to the Terms and Conditions</label>
-      <button data-automation-id="createAccountSubmitButton">Create Account</button>`;
+      <div style="position:relative;display:inline-block"><button data-automation-id="createAccountSubmitButton">Create Account</button>
+      <div data-automation-id="click_filter" aria-label="Create Account" style="position:absolute;inset:0"></div></div>`;
   if (st === 'myinfo') root.innerHTML = text('first', 'First Name', 1) + text('last', 'Last Name', 1) +
       text('addr', 'Address Line 1', 1) + text('city', 'City', 1) + text('zip', 'Postal Code', 1) +
       dd('country', 'Country', ['United States of America', 'Canada'], 1) +
@@ -124,7 +125,8 @@ function val(id) { const e = document.getElementById(id); if (!e) return '';
   if (e.tagName === 'BUTTON') return e.textContent === 'Select One' ? '' : e.textContent; return e.value; }
 function radio(name) { const c = document.querySelector(`input[name=${name}]:checked`); return c ? c.value : ''; }
 document.addEventListener('click', ev => {
-  const t = ev.target, aid = t.getAttribute && t.getAttribute('data-automation-id');
+  const t = ev.target; let aid = t.getAttribute && t.getAttribute('data-automation-id');
+  if (aid === 'click_filter') aid = 'createAccountSubmitButton';   // Workday's overlay forwards the click to the button
   const lb = document.getElementById('lb');
   if (t.dataset && t.dataset.add) { addEntry(t.dataset.add); return; }
   if (t.id && /-cur$/.test(t.id)) { const w = document.getElementById(t.id.replace('-cur', '-towrap')); if (w) w.innerHTML = t.checked ? '' : date(t.id.replace('-cur', '-to'), 'To', 1); return; }
